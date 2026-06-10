@@ -1,0 +1,27 @@
+# === 密钥：绝不提交 ===
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# 数据与数据库（体积大 / 可重新抓取）
+data/*.db
+data/*.sqlite
+data/*.csv
+data/raw/
+snapshots/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS / 编辑器
+.DS_Store
+.idea/
+.vscode/
+.claude/settings.local.json

@@ -1,0 +1,19 @@
+# 数值计算
+numpy>=1.26
+scipy>=1.11
+pandas>=2.0
+
+# 数据抓取
+requests>=2.31
+httpx>=0.27
+
+# 配置
+python-dotenv>=1.0
+
+# 后端 API
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# 前端看板
+streamlit>=1.33
+plotly>=5.20

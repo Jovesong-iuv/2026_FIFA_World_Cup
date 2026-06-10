@@ -1,0 +1,108 @@
+"""SQLite 连接与 schema。迁移到 Postgres 时主要改这一层。"""
+from __future__ import annotations
+
+import sqlite3
+from contextlib import contextmanager
+from typing import Iterator
+
+from wc2026.config import settings
+
+SCHEMA = """
+-- 历史国际比赛
+CREATE TABLE IF NOT EXISTS matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    home_team TEXT NOT NULL,
+    away_team TEXT NOT NULL,
+    home_score INTEGER NOT NULL,
+    away_score INTEGER NOT NULL,
+    tournament TEXT,
+    city TEXT,
+    country TEXT,
+    neutral INTEGER NOT NULL DEFAULT 0,
+    is_competitive INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(date, home_team, away_team)
+);
+CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(date);
+CREATE INDEX IF NOT EXISTS idx_matches_home ON matches(home_team);
+CREATE INDEX IF NOT EXISTS idx_matches_away ON matches(away_team);
+
+-- 2026 赛程（由 fixtures_2026 全量刷新；此处仅保证空表存在）
+CREATE TABLE IF NOT EXISTS fixtures (
+    match_number INTEGER PRIMARY KEY,
+    round_number INTEGER,
+    date_utc TEXT,
+    home_src TEXT,
+    away_src TEXT,
+    home_team TEXT,
+    away_team TEXT,
+    group_name TEXT,
+    location TEXT,
+    predictable INTEGER DEFAULT 0,
+    home_score INTEGER,
+    away_score INTEGER
+);
+
+-- 预测快照（版本化：支持"随新闻/伤停变化"的对比）
+CREATE TABLE IF NOT EXISTS predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    home_team TEXT NOT NULL,
+    away_team TEXT NOT NULL,
+    model TEXT NOT NULL,
+    payload TEXT NOT NULL          -- JSON：概率矩阵 / 各市场 / 理由
+);
+CREATE INDEX IF NOT EXISTS idx_pred_teams ON predictions(home_team, away_team);
+
+-- FotMob 队名 → 队 ID 映射缓存
+CREATE TABLE IF NOT EXISTS fm_teams (
+    team_lib TEXT PRIMARY KEY,
+    fm_id INTEGER,
+    fm_name TEXT,
+    updated_at TEXT
+);
+
+-- FotMob 大名单缓存（评分 + 伤停 + 俱乐部 + 头像/队徽 id + 中文名缓存；纯展示）
+CREATE TABLE IF NOT EXISTS fm_squads (
+    team_lib TEXT NOT NULL,
+    player_name TEXT NOT NULL,
+    number INTEGER,
+    position TEXT,
+    age INTEGER,
+    club TEXT,
+    rating REAL,
+    injured INTEGER DEFAULT 0,
+    injury_note TEXT,
+    updated_at TEXT,
+    player_id INTEGER,
+    club_id TEXT,
+    name_zh TEXT,
+    PRIMARY KEY (team_lib, player_name)
+);
+"""
+
+
+def _ensure_columns(conn) -> None:
+    """对已存在的 fm_squads 补齐后加的列（ALTER ADD，幂等），避免旧库缺列。"""
+    have = {r[1] for r in conn.execute("PRAGMA table_info(fm_squads)")}
+    for col, decl in (("player_id", "INTEGER"), ("club_id", "TEXT"), ("name_zh", "TEXT")):
+        if col not in have:
+            conn.execute(f"ALTER TABLE fm_squads ADD COLUMN {col} {decl}")
+
+
+@contextmanager
+def get_conn() -> Iterator[sqlite3.Connection]:
+    settings.ensure_dirs()
+    conn = sqlite3.connect(settings.sqlite_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def init_db() -> None:
+    with get_conn() as conn:
+        conn.executescript(SCHEMA)
+        _ensure_columns(conn)

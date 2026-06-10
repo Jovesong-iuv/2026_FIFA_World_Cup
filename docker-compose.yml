@@ -1,0 +1,39 @@
+# 本地一键启动：docker compose up --build
+# - init: 首次抓数据+训练（幂等，完成即退出）
+# - api : FastAPI 后端 (http://localhost:8000/docs)
+# - web : Streamlit 看板 (http://localhost:8501)
+# 迁移到服务器：同一份文件，把 DATABASE_URL 改为 postgresql://… 即可。
+
+services:
+  init:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    command: python scripts/bootstrap.py
+
+  api:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    command: uvicorn wc2026.api.app:app --host 0.0.0.0 --port 8000
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  web:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8501:8501"
+    command: >
+      streamlit run web/app.py
+      --server.port=8501 --server.address=0.0.0.0 --server.headless=true
+    depends_on:
+      init:
+        condition: service_completed_successfully

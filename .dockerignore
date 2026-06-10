@@ -1,0 +1,16 @@
+# 不进镜像：虚拟环境、缓存、密钥、本地数据
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+
+# 密钥用 env_file 运行时注入，不烤进镜像层
+.env
+
+# 数据通过卷挂载，不复制
+data/*.db
+data/*.sqlite
+data/*.csv
+data/*.json
