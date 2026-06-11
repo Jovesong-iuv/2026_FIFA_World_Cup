@@ -3,6 +3,7 @@
 启动： streamlit run web/app.py
 """
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -19,7 +20,7 @@ from wc2026.data.sources.fixtures_2026 import fetch_and_store_fixtures
 from wc2026.data.team_names import zh
 from wc2026.llm import reasoning
 from wc2026.markets import derive, value
-from wc2026.models.predictor import get_model, train_and_save
+from wc2026.models.predictor import DC_PATH, ELO_PATH, get_model, train_and_save
 
 st.set_page_config(page_title="2026 世界杯预测", page_icon="⚽", layout="wide")
 HOSTS = {"Mexico", "Canada", "United States"}
@@ -42,6 +43,146 @@ def load_fixtures():
 
 def llm_configured():
     return settings.llm_enabled and bool(settings.llm_api_key)
+
+
+def model_updated_label() -> str:
+    stamps = [p.stat().st_mtime for p in (DC_PATH, ELO_PATH) if p.exists()]
+    if not stamps:
+        return "暂无本地模型文件时间"
+    return datetime.fromtimestamp(max(stamps)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def best_odds_value(key: str, fallback: float) -> float:
+    val = st.session_state.get(key)
+    if val and val > 1.0:
+        return float(round(val, 2))
+    return float(round(fallback, 2))
+
+
+def odds_key(prefix: str, *parts) -> str:
+    return ":".join([prefix, home, away, *[str(p) for p in parts]])
+
+
+def predict_1x2_for_match(match: dict, neutral: bool = True) -> dict:
+    mat = model.score_matrix(match["home_team"], match["away_team"], neutral)
+    probs = derive.outcomes_1x2(mat)
+    fair = {k: derive.to_fair_odds(v) for k, v in probs.items()}
+    return {"probs": probs, "fair_odds": fair}
+
+
+def value_candidates_for_match(match: dict, neutral: bool = True) -> list[dict]:
+    home_team, away_team = match["home_team"], match["away_team"]
+    mat = model.score_matrix(home_team, away_team, neutral)
+    lam, mu = model.expected_goals(home_team, away_team, neutral)
+    return derive.market_candidates(mat, lam, mu, zh(home_team), zh(away_team))
+
+
+def render_parlay_builder() -> None:
+    st.subheader("串关组合")
+    st.caption("一次选择多场比赛；每场从单场「价值 & 凯利」同口径参数里单选一个，再计算串关总概率、总赔率和期望值。")
+    if not fixtures:
+        st.warning("暂无可预测赛程，请先刷新赛程或初始化数据。")
+        return
+    groups = sorted({f["group_name"] for f in fixtures})
+    g = st.selectbox("筛选分组", ["全部"] + groups, key="parlay_group")
+    flist = [f for f in fixtures if g == "全部" or f["group_name"] == g]
+    selected_idx = st.multiselect(
+        "选择串关场次",
+        range(len(flist)),
+        default=[],
+        format_func=lambda i: f"{zh(flist[i]['home_team'])} vs {zh(flist[i]['away_team'])} ({flist[i]['date_utc'][:10]})",
+    )
+    stake = st.number_input("本组串关投注金额", min_value=0.0, value=100.0, step=10.0)
+    parlay_markets = st.multiselect(
+        "显示参数类型",
+        ["胜平负", "半全场胜平负", "让球", "大小球", "进球个数", "比分"],
+        default=["胜平负", "半全场胜平负", "让球", "大小球", "进球个数", "比分"],
+    )
+    legs = []
+    if selected_idx:
+        st.markdown("**逐场参数选择**")
+    for pos, idx in enumerate(selected_idx, start=1):
+        match = flist[idx]
+        candidates = [
+            c for c in value_candidates_for_match(match, neutral=match["home_team"] not in HOSTS)
+            if c["market"] in parlay_markets
+        ]
+        if not candidates:
+            st.warning(f"{zh(match['home_team'])} vs {zh(match['away_team'])} 暂无可选参数。")
+            continue
+        st.markdown(f"**{pos}. {zh(match['home_team'])} vs {zh(match['away_team'])}**")
+        top_by_market = {}
+        market_order = {name: i for i, name in enumerate(["胜平负", "半全场胜平负", "让球", "大小球", "进球个数", "比分"])}
+        sorted_candidates = sorted(
+            candidates,
+            key=lambda r: (market_order.get(r["market"], 99), -r["model_prob"], r["label"]),
+        )
+        for row in sorted_candidates:
+            cur = top_by_market.get(row["market"])
+            if cur is None or row["model_prob"] > cur["model_prob"]:
+                top_by_market[row["market"]] = row
+        top_keys = {row["key"] for row in top_by_market.values()}
+        table_rows = []
+        for row in sorted_candidates:
+            table_rows.append({
+                "选择": False,
+                "key": row["key"],
+                "市场": row["market"],
+                "选项": row["label"],
+                "概率": row["model_prob"],
+                "概率显示": f"{row['model_prob']:.1%}",
+                "默认赔率": round(row["odds"], 2),
+                "实际赔率": round(row["odds"], 2),
+                "标记": "最高" if row["key"] in top_keys else "",
+            })
+        edited = st.data_editor(
+            pd.DataFrame(table_rows),
+            hide_index=True,
+            width="stretch",
+            disabled=["key", "市场", "选项", "概率显示", "默认赔率", "标记"],
+            column_order=["选择", "市场", "选项", "概率显示", "默认赔率", "实际赔率", "标记"],
+            column_config={
+                "选择": st.column_config.CheckboxColumn("选择"),
+                "默认赔率": st.column_config.NumberColumn("默认赔率", format="%.2f"),
+                "实际赔率": st.column_config.NumberColumn("实际赔率", min_value=1.01, step=0.01, format="%.2f"),
+            },
+            key=f"parlay_table:{match['match_number']}:{pos}",
+        )
+        selected_rows = edited[edited["选择"]]
+        if len(selected_rows) > 1:
+            st.warning("每场只能选一个参数；当前按表格中第一个勾选项计算。")
+        if selected_rows.empty:
+            st.caption("本场未选择参数，暂不纳入串关。")
+            continue
+        selected = selected_rows.iloc[0]
+        chosen = next(c for c in candidates if c["key"] == selected["key"])
+        odds_input = float(selected["实际赔率"])
+        legs.append({
+            "match": f"{zh(match['home_team'])} vs {zh(match['away_team'])}",
+            "market": chosen["market"],
+            "label": chosen["label"],
+            "model_prob": chosen["model_prob"],
+            "odds": odds_input,
+        })
+    summary = value.parlay_summary(legs, stake)
+    if not summary["legs"]:
+        st.info("请选择至少一场比赛，并保持每关赔率大于 1。")
+        return
+    st.divider()
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("串关总概率", f"{summary['combined_prob']:.2%}")
+    m2.metric("串关总赔率", f"{summary['combined_odds']:.2f}")
+    m3.metric("潜在返还", f"{summary['potential_return']:.2f}")
+    m4.metric("模型期望收益", f"{summary['expected_profit']:.2f}", f"{summary['edge']:+.1%}")
+    st.dataframe(pd.DataFrame([{
+        "场次": r["match"],
+        "市场": r.get("market", ""),
+        "选择": r["label"],
+        "模型概率": f"{r['model_prob']:.1%}",
+        "赔率": f"{r['odds']:.2f}",
+        "单关价值": f"{r['edge']:+.1%}",
+    } for r in summary["legs"]]), hide_index=True, width="stretch")
+    st.caption("串关假设各场结果近似独立；关数越多，命中率会快速下降。仅供概率辅助，不代表盈利保证。")
 
 
 def load_news(home, away):
@@ -76,6 +217,17 @@ fixtures = load_fixtures()
 
 st.title("⚽ 2026 世界杯 · 比分 / 赔率 预测")
 st.caption("基于 Dixon-Coles + 历史证据的概率参考 — 非盈利保证，请理性参与并遵守当地法规。")
+
+with st.sidebar:
+    st.header("功能")
+    page = st.radio("页面", ["单场分析", "串关组合"], horizontal=True)
+    st.divider()
+    if page == "串关组合":
+        st.caption("LLM 理由/分析：" + ("✅ 已配置，可手动触发" if llm_configured() else "⚠️ 规则模板(未接入)"))
+
+if page == "串关组合":
+    render_parlay_builder()
+    st.stop()
 
 with st.sidebar:
     st.header("选择比赛")
@@ -152,6 +304,7 @@ c1.metric(f"{zh(home)} 胜", f"{x['home']:.1%}", f"公平赔率 {odds['home']:.2
 c2.metric("平局", f"{x['draw']:.1%}", f"公平赔率 {odds['draw']:.2f}")
 c3.metric(f"{zh(away)} 胜", f"{x['away']:.1%}", f"公平赔率 {odds['away']:.2f}")
 c4.metric("模型预期进球", f"{lam:.2f} : {mu:.2f}")
+st.caption(f"数据刷新说明：胜平负和模型预期进球由当前本地模型即时计算；模型文件最近更新时间 {model_updated_label()}。侧边栏「一键全量刷新」或脚本/API 刷新后才会重训并更新。")
 
 left, right = st.columns([3, 2])
 with left:
@@ -176,6 +329,7 @@ with right:
     st.caption("来源：" + ("🤖 AI 生成" if display_reason["source"] == "llm" else "📋 规则模板"))
 
 st.markdown("**各市场概率**")
+half_full = derive.half_full_time(lam, mu)
 m1, m2, m3 = st.columns(3)
 with m1:
     st.caption("大小球")
@@ -192,13 +346,59 @@ with m3:
     st.dataframe(pd.DataFrame([{"比分": d["score"], "概率": f"{d['prob']:.1%}"}
                               for d in markets["correct_score_top"]]),
                  hide_index=True, width="stretch")
+m4, m5, m6 = st.columns(3)
+with m4:
+    st.caption("半全场胜平负")
+    st.dataframe(pd.DataFrame([{"半全场": k, "概率": f"{v:.1%}"}
+                              for k, v in sorted(half_full.items(), key=lambda kv: kv[1], reverse=True)]),
+                 hide_index=True, width="stretch")
+with m5:
+    st.caption("进球个数")
+    st.dataframe(pd.DataFrame([{"进球数": k, "概率": f"{v:.1%}"}
+                              for k, v in markets["goal_bands"].items()]),
+                 hide_index=True, width="stretch")
+with m6:
+    st.caption("说明")
+    st.write("半全场按主队视角：第一个字=上半场结果，第二个字=全场结果。")
 
 with st.expander("💰 价值 & 凯利（输入体彩/盘口赔率）", expanded=False):
     st.caption("输入该场实际赔率(十进制/欧赔)，对比模型概率找价值盘。默认填的是模型公平赔率。")
     vc1, vc2, vc3 = st.columns(3)
-    o_home = vc1.number_input(f"{zh(home)}胜 赔率", min_value=1.01, value=float(round(odds["home"], 2)), step=0.01)
-    o_draw = vc2.number_input("平局 赔率", min_value=1.01, value=float(round(odds["draw"], 2)), step=0.01)
-    o_away = vc3.number_input(f"{zh(away)}胜 赔率", min_value=1.01, value=float(round(odds["away"], 2)), step=0.01)
+    if st.button("🔄 拉取本场可用赔率预填", help="需要 ODDS_API_KEY；会尝试预填胜平负、让球、大小球等 The Odds API 支持的市场。"):
+        from wc2026.data.sources import odds_api
+        try:
+            with st.spinner("拉取 The Odds API 赔率…"):
+                odds_map = odds_api.fetch_event_odds()
+                st.session_state["odds_quota"] = odds_api.last_quota()
+            event_odds = odds_map.get((home, away)) or odds_map.get((away, home)) or {}
+            if not event_odds:
+                st.warning("没有找到本场赔率，可能该场还未开放或队名未匹配。")
+            else:
+                h2h = event_odds.get("h2h", {})
+                st.session_state[odds_key("odds_1x2", "home")] = h2h.get("home", 0.0)
+                st.session_state[odds_key("odds_1x2", "draw")] = h2h.get("draw", 0.0)
+                st.session_state[odds_key("odds_1x2", "away")] = h2h.get("away", 0.0)
+                if h2h.get("home", 0.0) > 1.0:
+                    st.session_state[odds_key("odds_1x2_input", "home")] = float(h2h["home"])
+                if h2h.get("draw", 0.0) > 1.0:
+                    st.session_state[odds_key("odds_1x2_input", "draw")] = float(h2h["draw"])
+                if h2h.get("away", 0.0) > 1.0:
+                    st.session_state[odds_key("odds_1x2_input", "away")] = float(h2h["away"])
+                st.session_state[odds_key("event_odds")] = event_odds
+                st.success("已拉取可用赔率并预填；没有的市场仍保留模型公平赔率。")
+            render_quota(st.session_state.get("odds_quota", {}))
+        except Exception as exc:
+            st.error(f"赔率拉取失败：{exc}")
+    event_odds = st.session_state.get(odds_key("event_odds"), {})
+    o_home = vc1.number_input(f"{zh(home)}胜 赔率", min_value=1.01,
+                              value=best_odds_value(odds_key("odds_1x2", "home"), odds["home"]),
+                              step=0.01, key=odds_key("odds_1x2_input", "home"))
+    o_draw = vc2.number_input("平局 赔率", min_value=1.01,
+                              value=best_odds_value(odds_key("odds_1x2", "draw"), odds["draw"]),
+                              step=0.01, key=odds_key("odds_1x2_input", "draw"))
+    o_away = vc3.number_input(f"{zh(away)}胜 赔率", min_value=1.01,
+                              value=best_odds_value(odds_key("odds_1x2", "away"), odds["away"]),
+                              step=0.01, key=odds_key("odds_1x2_input", "away"))
     analysis = value.analyze_1x2(x, {"home": o_home, "draw": o_draw, "away": o_away})
     imp = analysis["implied"]
     st.caption(f"盘口水位 overround = {imp['overround']:.3f}（超过 1 的部分是博彩抽水）")
@@ -219,6 +419,145 @@ with st.expander("💰 价值 & 凯利（输入体彩/盘口赔率）", expanded
         })
     st.dataframe(pd.DataFrame(vrows), hide_index=True, width="stretch")
     st.caption("⚠️ 价值>0 才有长期正期望；注码为占本金比例(已用 1/4 分数凯利)。模型有误差，仅供参考、量力而行。")
+
+    st.divider()
+    st.markdown("**投注分配器**")
+    st.caption("输入总金额与实际赔率，按当前页面概率计算正期望候选项，并用 1/4 凯利权重归一分配。未出现正期望时不会建议下注。")
+    bankroll = st.number_input("计划投入金额", min_value=0.0, value=100.0, step=10.0)
+    include_markets = st.multiselect(
+        "纳入计算的市场",
+        ["胜平负", "半全场胜平负", "让球", "大小球", "进球个数", "比分"],
+        default=["胜平负", "半全场胜平负", "让球", "大小球", "进球个数", "比分"],
+    )
+    stake_candidates = []
+    if "胜平负" in include_markets:
+        stake_candidates.extend([
+            {"key": "1x2_home", "market": "胜平负", "label": f"{zh(home)}胜",
+             "model_prob": x["home"], "odds": o_home},
+            {"key": "1x2_draw", "market": "胜平负", "label": "平局",
+             "model_prob": x["draw"], "odds": o_draw},
+            {"key": "1x2_away", "market": "胜平负", "label": f"{zh(away)}胜",
+             "model_prob": x["away"], "odds": o_away},
+        ])
+    if "让球" in include_markets:
+        ah_line = st.selectbox("让球盘口线（主队视角）", list(markets["asian_handicap"].keys()), index=3)
+        ah = markets["asian_handicap"][ah_line]
+        ah1, ah2 = st.columns(2)
+        fair_ah_home = derive.to_fair_odds(ah["home_win"])
+        fair_ah_away = derive.to_fair_odds(ah["home_loss"])
+        pulled_ah = event_odds.get("spreads", {}).get(ah_line, {})
+        o_ah_home = ah1.number_input(
+            f"{zh(home)} 让球赢 赔率",
+            min_value=1.01,
+            value=float(round(pulled_ah.get("home") or fair_ah_home, 2)),
+            step=0.01,
+            key=f"ah_home:{home}:{away}:{ah_line}",
+        )
+        o_ah_away = ah2.number_input(
+            f"{zh(away)} 让球赢 赔率",
+            min_value=1.01,
+            value=float(round(pulled_ah.get("away") or fair_ah_away, 2)),
+            step=0.01,
+            key=f"ah_away:{home}:{away}:{ah_line}",
+        )
+        stake_candidates.extend([
+            {"key": f"ah_{ah_line}_home", "market": "让球", "label": f"{zh(home)} {ah_line} 赢",
+             "model_prob": ah["home_win"], "push_prob": ah["push"], "odds": o_ah_home},
+            {"key": f"ah_{ah_line}_away", "market": "让球", "label": f"{zh(away)} {-float(ah_line):g} 赢",
+             "model_prob": ah["home_loss"], "push_prob": ah["push"], "odds": o_ah_away},
+        ])
+    if "大小球" in include_markets:
+        ou_line = st.selectbox("大小球盘口", list(markets["over_under"].keys()), index=1)
+        ou = markets["over_under"][ou_line]
+        ou1, ou2 = st.columns(2)
+        pulled_ou = event_odds.get("totals", {}).get(ou_line, {})
+        o_over = ou1.number_input(
+            f"大 {ou_line} 赔率",
+            min_value=1.01,
+            value=float(round(pulled_ou.get("over") or derive.to_fair_odds(ou["over"]), 2)),
+            step=0.01,
+            key=f"ou_over:{home}:{away}:{ou_line}",
+        )
+        o_under = ou2.number_input(
+            f"小 {ou_line} 赔率",
+            min_value=1.01,
+            value=float(round(pulled_ou.get("under") or derive.to_fair_odds(ou["under"]), 2)),
+            step=0.01,
+            key=f"ou_under:{home}:{away}:{ou_line}",
+        )
+        stake_candidates.extend([
+            {"key": f"ou_{ou_line}_over", "market": "大小球", "label": f"大 {ou_line}",
+             "model_prob": ou["over"], "push_prob": ou["push"], "odds": o_over},
+            {"key": f"ou_{ou_line}_under", "market": "大小球", "label": f"小 {ou_line}",
+             "model_prob": ou["under"], "push_prob": ou["push"], "odds": o_under},
+        ])
+    if "进球个数" in include_markets:
+        st.caption("进球个数按总进球分组：0-1、2-3、4+。")
+        gb_cols = st.columns(3)
+        for idx, (label, prob) in enumerate(markets["goal_bands"].items()):
+            gb_odds = gb_cols[idx].number_input(
+                f"{label} 赔率",
+                min_value=1.01,
+                value=float(round(derive.to_fair_odds(prob), 2)),
+                step=0.01,
+                key=f"goal_band:{home}:{away}:{label}",
+            )
+            stake_candidates.append({
+                "key": f"goal_band_{label}",
+                "market": "进球个数",
+                "label": label,
+                "model_prob": prob,
+                "odds": gb_odds,
+            })
+    if "比分" in include_markets:
+        st.caption("比分只展示当前模型 Top 6；请填你实际能买到的正确比分赔率。")
+        for idx, item in enumerate(markets["correct_score_top"]):
+            fair_score = derive.to_fair_odds(item["prob"])
+            score_odds = st.number_input(
+                f"{item['score']} 赔率（模型概率 {item['prob']:.1%}）",
+                min_value=1.01,
+                value=float(round(fair_score, 2)),
+                step=0.1,
+                key=f"score_odds:{home}:{away}:{idx}:{item['score']}",
+            )
+            stake_candidates.append({
+                "key": f"score_{item['score']}",
+                "market": "比分",
+                "label": item["score"],
+                "model_prob": item["prob"],
+                "odds": score_odds,
+            })
+    if "半全场胜平负" in include_markets:
+        st.caption("半全场胜平负为 9 种组合，按主队视角显示：胜胜、胜平、胜负、平胜、平平、平负、负胜、负平、负负。请填实际赔率。")
+        for idx, (label, prob) in enumerate(sorted(half_full.items(), key=lambda kv: kv[1], reverse=True)):
+            hf_odds = st.number_input(
+                f"{label} 赔率（模型概率 {prob:.1%}）",
+                min_value=1.01,
+                value=float(round(derive.to_fair_odds(prob), 2)),
+                step=0.1,
+                key=f"half_full:{home}:{away}:{idx}:{label}",
+            )
+            stake_candidates.append({
+                "key": f"half_full_{label}",
+                "market": "半全场胜平负",
+                "label": label,
+                "model_prob": prob,
+                "odds": hf_odds,
+            })
+    allocation = value.allocate_stakes(stake_candidates, bankroll)
+    if allocation:
+        st.dataframe(pd.DataFrame([{
+            "市场": r["market"],
+            "选择": r["label"],
+            "模型概率": f"{r['model_prob']:.1%}",
+            "赔率": f"{r['odds']:.2f}",
+            "价值": f"{r['edge']:+.1%}",
+            "分配比例": f"{r['allocation_pct']:.1%}",
+            "建议金额": f"{r['stake']:.2f}",
+            "模型期望收益": f"{r['expected_profit']:.2f}",
+        } for r in allocation]), hide_index=True, width="stretch")
+    else:
+        st.info("当前输入赔率下没有正期望候选项，建议不下注或重新核对赔率。")
 
 ev = reason["evidence"]
 with st.expander("📊 证据 · 数据支撑（交锋 + 近况）", expanded=True):

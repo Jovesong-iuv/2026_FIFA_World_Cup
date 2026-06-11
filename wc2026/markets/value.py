@@ -38,6 +38,86 @@ def value_and_kelly(model_p: dict, odds: dict, kelly_fraction: float = 0.25) -> 
     return out
 
 
+def allocate_stakes(candidates: list[dict], bankroll: float, kelly_fraction: float = 0.25,
+                    max_total_fraction: float = 1.0) -> list[dict]:
+    """按正期望候选项的分数凯利权重，把指定金额分配为下注建议。
+
+    candidates 每项至少包含 key/label/market/model_prob/odds；让球等可退本金市场可传 push_prob。
+    返回只包含 edge>0 且建议权重大于 0 的项，stake 合计不超过 bankroll * max_total_fraction。
+    """
+    if bankroll <= 0:
+        return []
+    rows = []
+    for item in candidates:
+        p = float(item.get("model_prob") or 0.0)
+        push = float(item.get("push_prob") or 0.0)
+        odds = float(item.get("odds") or 0.0)
+        if p <= 0 or odds <= 1.0:
+            continue
+        b = odds - 1.0
+        loss_prob = max(0.0, 1.0 - p - push)
+        edge = p * b - loss_prob
+        kelly_full = edge / b if b > 0 else 0.0
+        weight = max(kelly_full, 0.0) * kelly_fraction
+        if edge <= 0 or weight <= 0:
+            continue
+        rows.append({
+            **item,
+            "model_prob": p,
+            "push_prob": push,
+            "odds": odds,
+            "edge": edge,
+            "kelly_full": max(kelly_full, 0.0),
+            "kelly_frac": weight,
+        })
+    total_weight = sum(r["kelly_frac"] for r in rows)
+    if total_weight <= 0:
+        return []
+    stake_pool = bankroll * max(0.0, min(max_total_fraction, 1.0))
+    for r in rows:
+        r["allocation_pct"] = r["kelly_frac"] / total_weight
+        r["stake"] = stake_pool * r["allocation_pct"]
+        r["expected_profit"] = r["stake"] * r["edge"]
+    rows.sort(key=lambda r: (r["stake"], r["edge"]), reverse=True)
+    return rows
+
+
+def parlay_summary(legs: list[dict], stake: float) -> dict:
+    """串关汇总：组合概率=各关概率相乘，组合赔率=各关赔率相乘。"""
+    valid = []
+    combined_prob = 1.0
+    combined_odds = 1.0
+    for leg in legs:
+        p = float(leg.get("model_prob") or 0.0)
+        odds = float(leg.get("odds") or 0.0)
+        if p <= 0 or odds <= 1.0:
+            continue
+        row = {**leg, "model_prob": p, "odds": odds}
+        row["edge"] = p * odds - 1.0
+        valid.append(row)
+        combined_prob *= p
+        combined_odds *= odds
+    if not valid:
+        return {
+            "legs": [],
+            "combined_prob": 0,
+            "combined_odds": 0,
+            "edge": 0,
+            "potential_return": 0,
+            "expected_profit": 0,
+        }
+    edge = combined_prob * combined_odds - 1.0
+    potential_return = max(stake, 0) * combined_odds
+    return {
+        "legs": valid,
+        "combined_prob": combined_prob,
+        "combined_odds": combined_odds,
+        "edge": edge,
+        "potential_return": potential_return,
+        "expected_profit": max(stake, 0) * edge,
+    }
+
+
 def analyze_1x2(model_1x2: dict, odds: dict, kelly_fraction: float = 0.25) -> dict:
     """便捷：1X2 价值分析。model_1x2/odds 形如 {'home':..,'draw':..,'away':..}。"""
     return {

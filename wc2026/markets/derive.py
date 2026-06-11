@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 _EPS = 1e-9
@@ -86,6 +88,59 @@ def correct_score_top(mat: np.ndarray, n: int = 6) -> list[dict]:
     return out
 
 
+def goal_bands(mat: np.ndarray) -> dict:
+    """总进球数分组：0-1、2-3、4+。"""
+    i, j = np.indices(mat.shape)
+    tot = i + j
+    return {
+        "0-1球": float(mat[tot <= 1].sum()),
+        "2-3球": float(mat[(tot >= 2) & (tot <= 3)].sum()),
+        "4+球": float(mat[tot >= 4].sum()),
+    }
+
+
+def half_time_1x2(lam: float, mu: float) -> dict:
+    """半场胜平负；用全场预期进球的 45/90 比例近似半场进球率。"""
+    mat = _poisson_score_matrix(lam * 0.5, mu * 0.5)
+    return outcomes_1x2(mat)
+
+
+def half_full_time(lam: float, mu: float) -> dict:
+    """半全场 9 选项；假设上下半场独立且进球率各占 50%。"""
+    first = _poisson_score_matrix(lam * 0.5, mu * 0.5)
+    second = _poisson_score_matrix(lam * 0.5, mu * 0.5)
+    labels = {"home": "胜", "draw": "平", "away": "负"}
+    out = {f"{a}{b}": 0.0 for a in labels.values() for b in labels.values()}
+    for hi in range(first.shape[0]):
+        for ai in range(first.shape[1]):
+            ht = _result_key(hi - ai)
+            p1 = first[hi, ai]
+            if p1 <= 0:
+                continue
+            for hs in range(second.shape[0]):
+                for a_s in range(second.shape[1]):
+                    ft = _result_key((hi + hs) - (ai + a_s))
+                    out[f"{labels[ht]}{labels[ft]}"] += float(p1 * second[hs, a_s])
+    s = sum(out.values())
+    return {k: v / s for k, v in out.items()} if s > 0 else out
+
+
+def _result_key(goal_diff: int) -> str:
+    if goal_diff > 0:
+        return "home"
+    if goal_diff < 0:
+        return "away"
+    return "draw"
+
+
+def _poisson_score_matrix(lam: float, mu: float, max_goals: int = 10) -> np.ndarray:
+    hs = np.arange(max_goals + 1)
+    home = np.exp(-lam) * np.power(lam, hs) / np.array([math.factorial(int(i)) for i in hs])
+    away = np.exp(-mu) * np.power(mu, hs) / np.array([math.factorial(int(i)) for i in hs])
+    mat = np.outer(home, away)
+    return mat / mat.sum()
+
+
 def summarize(
     mat: np.ndarray,
     ou_lines: tuple[float, ...] = (1.5, 2.5, 3.5),
@@ -99,5 +154,46 @@ def summarize(
         "over_under": {str(l): over_under(mat, l) for l in ou_lines},
         "asian_handicap": {str(l): asian_handicap(mat, l) for l in ah_lines},
         "btts": both_teams_to_score(mat),
+        "goal_bands": goal_bands(mat),
         "correct_score_top": correct_score_top(mat),
     }
+
+
+def market_candidates(mat: np.ndarray, lam: float, mu: float, home_label: str,
+                      away_label: str) -> list[dict]:
+    """生成单场可选市场候选项，供投注分配与串关复用。赔率默认公平赔率。"""
+    markets = summarize(mat)
+    rows = []
+    x = markets["1x2"]
+    rows.extend([
+        {"key": "1x2_home", "market": "胜平负", "label": f"{home_label}胜",
+         "model_prob": x["home"], "odds": to_fair_odds(x["home"])},
+        {"key": "1x2_draw", "market": "胜平负", "label": "平局",
+         "model_prob": x["draw"], "odds": to_fair_odds(x["draw"])},
+        {"key": "1x2_away", "market": "胜平负", "label": f"{away_label}胜",
+         "model_prob": x["away"], "odds": to_fair_odds(x["away"])},
+    ])
+    for line, ah in markets["asian_handicap"].items():
+        rows.extend([
+            {"key": f"ah_{line}_home", "market": "让球", "label": f"{home_label} {line} 赢",
+             "model_prob": ah["home_win"], "push_prob": ah["push"], "odds": to_fair_odds(ah["home_win"])},
+            {"key": f"ah_{line}_away", "market": "让球", "label": f"{away_label} {-float(line):g} 赢",
+             "model_prob": ah["home_loss"], "push_prob": ah["push"], "odds": to_fair_odds(ah["home_loss"])},
+        ])
+    for line, ou in markets["over_under"].items():
+        rows.extend([
+            {"key": f"ou_{line}_over", "market": "大小球", "label": f"大 {line}",
+             "model_prob": ou["over"], "push_prob": ou["push"], "odds": to_fair_odds(ou["over"])},
+            {"key": f"ou_{line}_under", "market": "大小球", "label": f"小 {line}",
+             "model_prob": ou["under"], "push_prob": ou["push"], "odds": to_fair_odds(ou["under"])},
+        ])
+    for label, prob in markets["goal_bands"].items():
+        rows.append({"key": f"goal_band_{label}", "market": "进球个数", "label": label,
+                     "model_prob": prob, "odds": to_fair_odds(prob)})
+    for item in markets["correct_score_top"]:
+        rows.append({"key": f"score_{item['score']}", "market": "比分", "label": item["score"],
+                     "model_prob": item["prob"], "odds": to_fair_odds(item["prob"])})
+    for label, prob in half_full_time(lam, mu).items():
+        rows.append({"key": f"half_full_{label}", "market": "半全场胜平负", "label": label,
+                     "model_prob": prob, "odds": to_fair_odds(prob)})
+    return [r for r in rows if r["model_prob"] > _EPS and 1.0 < r["odds"] < float("inf")]
