@@ -12,6 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from wc2026 import auth
 from wc2026.config import settings
 from wc2026.data.db import get_conn
 from wc2026.data.ingest import ingest_international_results
@@ -24,6 +25,239 @@ from wc2026.models.predictor import DC_PATH, ELO_PATH, get_model, train_and_save
 
 st.set_page_config(page_title="2026 世界杯预测", page_icon="⚽", layout="wide")
 HOSTS = {"Mexico", "Canada", "United States"}
+
+
+def inject_design_system() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+            --wc-bg: #f5f7fb;
+            --wc-surface: #ffffff;
+            --wc-surface-2: #eef4f8;
+            --wc-text: #17202a;
+            --wc-muted: #64748b;
+            --wc-line: #d8e1ea;
+            --wc-primary: #0f766e;
+            --wc-accent: #b45309;
+            --wc-danger: #b91c1c;
+        }
+        .stApp {
+            background:
+                linear-gradient(180deg, rgba(15, 118, 110, .08), rgba(15, 118, 110, 0) 260px),
+                var(--wc-bg);
+            color: var(--wc-text);
+        }
+        section[data-testid="stSidebar"] {
+            background: #102026;
+            border-right: 1px solid rgba(255,255,255,.08);
+        }
+        section[data-testid="stSidebar"] * {
+            color: #e8f1f2 !important;
+        }
+        section[data-testid="stSidebar"] div[data-baseweb="radio"] label,
+        section[data-testid="stSidebar"] div[data-baseweb="checkbox"] label {
+            background: rgba(255,255,255,.06);
+            border: 1px solid rgba(255,255,255,.10);
+            border-radius: 8px;
+            padding: 7px 9px;
+            margin-bottom: 6px;
+        }
+        .block-container {
+            padding-top: 2rem;
+            max-width: 1360px;
+        }
+        div[data-testid="stMetric"] {
+            background: var(--wc-surface);
+            border: 1px solid var(--wc-line);
+            border-radius: 8px;
+            padding: 14px 16px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, .05);
+        }
+        div[data-testid="stMetric"] label {
+            color: var(--wc-muted) !important;
+            font-weight: 600;
+        }
+        div[data-testid="stDataFrame"],
+        div[data-testid="stDataEditor"] {
+            border: 1px solid var(--wc-line);
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--wc-surface);
+        }
+        div[data-testid="stExpander"] {
+            border: 1px solid var(--wc-line);
+            border-radius: 8px;
+            background: rgba(255,255,255,.82);
+        }
+        .stButton > button,
+        .stFormSubmitButton > button {
+            border-radius: 8px;
+            border: 1px solid rgba(15, 118, 110, .24);
+            background: #0f766e;
+            color: white;
+            font-weight: 700;
+            min-height: 42px;
+        }
+        .stButton > button:hover,
+        .stFormSubmitButton > button:hover {
+            border-color: #0f766e;
+            background: #115e59;
+            color: white;
+        }
+        .wc-hero {
+            background: linear-gradient(135deg, #102026 0%, #123c3a 52%, #6b3f12 100%);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 8px;
+            padding: 22px 24px;
+            margin-bottom: 18px;
+            color: #f8fafc;
+            box-shadow: 0 18px 44px rgba(15, 23, 42, .16);
+        }
+        .wc-hero h1 {
+            margin: 0;
+            font-size: 30px;
+            line-height: 1.2;
+            letter-spacing: 0;
+        }
+        .wc-hero p {
+            margin: 8px 0 0;
+            color: #d7e5e5;
+            font-size: 15px;
+            line-height: 1.55;
+        }
+        .wc-kicker {
+            color: #facc15;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+        .wc-section {
+            color: var(--wc-text);
+            font-size: 18px;
+            font-weight: 800;
+            margin: 20px 0 10px;
+        }
+        .wc-note {
+            color: var(--wc-muted);
+            font-size: 13px;
+            line-height: 1.55;
+        }
+        .wc-login {
+            max-width: 460px;
+            margin: 10vh auto 0;
+            background: white;
+            border: 1px solid var(--wc-line);
+            border-radius: 8px;
+            padding: 26px;
+            box-shadow: 0 24px 60px rgba(15, 23, 42, .12);
+        }
+        .wc-login h1 {
+            font-size: 26px;
+            margin: 0 0 6px;
+        }
+        .wc-login p {
+            margin: 0 0 18px;
+            color: var(--wc-muted);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_hero(title: str, subtitle: str, kicker: str = "WORLD CUP MODEL") -> None:
+    st.markdown(
+        f"""
+        <div class="wc-hero">
+            <div class="wc-kicker">{kicker}</div>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def section_title(text: str) -> None:
+    st.markdown(f'<div class="wc-section">{text}</div>', unsafe_allow_html=True)
+
+
+def require_login() -> dict:
+    if st.session_state.get("auth_user"):
+        return {"username": st.session_state["auth_user"], "role": st.session_state.get("auth_role", "user")}
+    st.markdown(
+        """
+        <div class="wc-login">
+            <h1>2026 世界杯预测</h1>
+            <p>登录后进入模型预测、价值分析与串关组合工作台。</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.form("login_form"):
+        username = st.text_input("账号")
+        password = st.text_input("密码", type="password")
+        submitted = st.form_submit_button("登录")
+    if submitted:
+        if auth.verify_login(username, password):
+            st.session_state["auth_user"] = username.strip()
+            st.session_state["auth_role"] = auth.user_role(username.strip())
+            st.rerun()
+        else:
+            st.error("账号或密码错误。")
+    st.stop()
+
+
+def render_admin_user_panel() -> None:
+    st.divider()
+    st.caption(f"当前用户：{st.session_state.get('auth_user')}")
+    if st.button("退出登录"):
+        for key in ("auth_user", "auth_role"):
+            st.session_state.pop(key, None)
+        st.rerun()
+    if st.session_state.get("auth_role") != "admin":
+        return
+    with st.expander("管理员 · 创建用户", expanded=False):
+        with st.form("create_user_form"):
+            new_username = st.text_input("新账号")
+            new_password = st.text_input("新密码", type="password")
+            submitted = st.form_submit_button("创建")
+        if submitted:
+            if auth.create_user(new_username, new_password):
+                st.success(f"已创建用户：{new_username.strip()}")
+            else:
+                st.error("创建失败：账号为空、密码为空或账号已存在。")
+
+
+def render_user_management() -> None:
+    render_hero("用户管理", "查看本地账号信息、创建用户，并为用户重置密码。", "ADMIN")
+    if st.session_state.get("auth_role") != "admin":
+        st.error("仅管理员可访问。")
+        return
+    rows = auth.list_users()
+    st.dataframe(pd.DataFrame([{
+        "账号": r["username"],
+        "角色": r["role"],
+        "密码哈希摘要": r["password_hash_preview"],
+        "创建时间": r["created_at"],
+        "更新时间": r["updated_at"],
+    } for r in rows]), hide_index=True, width="stretch")
+    st.caption("密码采用哈希存储，不能查看明文；需要变更时请重置密码。")
+    st.markdown("**重置密码**")
+    usernames = [r["username"] for r in rows]
+    with st.form("reset_password_form"):
+        username = st.selectbox("账号", usernames)
+        new_password = st.text_input("新密码", type="password")
+        submitted = st.form_submit_button("重置密码")
+    if submitted:
+        if auth.reset_password(username, new_password):
+            st.success(f"已重置 {username} 的密码。")
+            st.rerun()
+        else:
+            st.error("重置失败：账号不存在或密码为空。")
 
 
 @st.cache_resource
@@ -78,8 +312,11 @@ def value_candidates_for_match(match: dict, neutral: bool = True) -> list[dict]:
 
 
 def render_parlay_builder() -> None:
-    st.subheader("串关组合")
-    st.caption("一次选择多场比赛；每场从单场「价值 & 凯利」同口径参数里单选一个，再计算串关总概率、总赔率和期望值。")
+    render_hero(
+        "串关组合",
+        "选择多场比赛；每场从单场「价值 & 凯利」同口径参数里单选一个，再计算串关总概率、总赔率和期望值。",
+        "PARLAY BUILDER",
+    )
     if not fixtures:
         st.warning("暂无可预测赛程，请先刷新赛程或初始化数据。")
         return
@@ -100,7 +337,7 @@ def render_parlay_builder() -> None:
     )
     legs = []
     if selected_idx:
-        st.markdown("**逐场参数选择**")
+        section_title("逐场参数选择")
     for pos, idx in enumerate(selected_idx, start=1):
         match = flist[idx]
         candidates = [
@@ -133,7 +370,7 @@ def render_parlay_builder() -> None:
                 "概率显示": f"{row['model_prob']:.1%}",
                 "默认赔率": round(row["odds"], 2),
                 "实际赔率": round(row["odds"], 2),
-                "标记": "最高" if row["key"] in top_keys else "",
+                "标记": "本类最高概率" if row["key"] in top_keys else "",
             })
         edited = st.data_editor(
             pd.DataFrame(table_rows),
@@ -166,7 +403,7 @@ def render_parlay_builder() -> None:
         })
     summary = value.parlay_summary(legs, stake)
     if not summary["legs"]:
-        st.info("请选择至少一场比赛，并保持每关赔率大于 1。")
+        st.info("请选择至少一场比赛，并在每场表格中勾选一个参数。")
         return
     st.divider()
     m1, m2, m3, m4 = st.columns(4)
@@ -212,21 +449,32 @@ def render_quota(quota: dict, label: str = "The Odds API") -> None:
         st.caption(f"{label} 配额：" + " · ".join(parts))
 
 
+inject_design_system()
+user = require_login()
 model = load_model()
 fixtures = load_fixtures()
 
-st.title("⚽ 2026 世界杯 · 比分 / 赔率 预测")
-st.caption("基于 Dixon-Coles + 历史证据的概率参考 — 非盈利保证，请理性参与并遵守当地法规。")
+render_hero(
+    "2026 世界杯预测工作台",
+    "比分概率、盘口价值、串关组合与证据分析集中在一个可操作界面中。模型结论仅供参考，请理性参与并遵守当地法规。",
+)
 
 with st.sidebar:
     st.header("功能")
-    page = st.radio("页面", ["单场分析", "串关组合"], horizontal=True)
+    page_options = ["单场分析", "串关组合"]
+    if user["role"] == "admin":
+        page_options.append("用户管理")
+    page = st.radio("页面", page_options, horizontal=True)
+    render_admin_user_panel()
     st.divider()
     if page == "串关组合":
         st.caption("LLM 理由/分析：" + ("✅ 已配置，可手动触发" if llm_configured() else "⚠️ 规则模板(未接入)"))
 
 if page == "串关组合":
     render_parlay_builder()
+    st.stop()
+if page == "用户管理":
+    render_user_management()
     st.stop()
 
 with st.sidebar:
@@ -280,7 +528,7 @@ if home == away:
     st.warning("请选择两支不同的球队。")
     st.stop()
 
-st.subheader(f"{zh(home)}　vs　{zh(away)}")
+section_title(f"{zh(home)} vs {zh(away)}")
 if venue_info:
     st.caption(venue_info)
 
@@ -308,7 +556,7 @@ st.caption(f"数据刷新说明：胜平负和模型预期进球由当前本地�
 
 left, right = st.columns([3, 2])
 with left:
-    st.markdown("**比分概率热力图**")
+    section_title("比分概率热力图")
     n = mat.shape[0]
     fig = go.Figure(go.Heatmap(
         z=mat, x=[str(j) for j in range(n)], y=[str(i) for i in range(n)],
@@ -318,7 +566,7 @@ with left:
                       height=400, margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig, width="stretch")
 with right:
-    st.markdown("**为什么 · 理由**")
+    section_title("为什么")
     reason_key = f"reason:{home}:{away}:{neutral}:{use_context}:{tank_risk}"
     display_reason = st.session_state.get(reason_key, reason)
     if llm_configured() and st.button("🤖 手动生成 AI 理由", key=f"ai_reason:{home}:{away}:{neutral}:{use_context}:{tank_risk}"):
@@ -328,7 +576,7 @@ with right:
     st.info(display_reason["text"])
     st.caption("来源：" + ("🤖 AI 生成" if display_reason["source"] == "llm" else "📋 规则模板"))
 
-st.markdown("**各市场概率**")
+section_title("各市场概率")
 half_full = derive.half_full_time(lam, mu)
 m1, m2, m3 = st.columns(3)
 with m1:
