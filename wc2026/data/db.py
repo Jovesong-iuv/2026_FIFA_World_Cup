@@ -77,15 +77,29 @@ CREATE TABLE IF NOT EXISTS fm_squads (
     player_id INTEGER,
     club_id TEXT,
     name_zh TEXT,
+    value REAL,
     PRIMARY KEY (team_lib, player_name)
 );
+
+-- 赔率快照（赔率走势）：每次拉取按市场/选项落一行，captured_at 为抓取时间
+CREATE TABLE IF NOT EXISTS odds_snapshots (
+    captured_at TEXT NOT NULL,
+    home_team TEXT NOT NULL,
+    away_team TEXT NOT NULL,
+    market TEXT NOT NULL,        -- h2h / spreads / totals
+    selection TEXT NOT NULL,     -- h2h: home/draw/away；spreads: home/away；totals: over/under
+    line TEXT,                   -- 让球/大小球盘口线；h2h 为 NULL
+    odds REAL
+);
+CREATE INDEX IF NOT EXISTS idx_odds_snap ON odds_snapshots(home_team, away_team, market, captured_at);
 """
 
 
 def _ensure_columns(conn) -> None:
     """对已存在的 fm_squads 补齐后加的列（ALTER ADD，幂等），避免旧库缺列。"""
     have = {r[1] for r in conn.execute("PRAGMA table_info(fm_squads)")}
-    for col, decl in (("player_id", "INTEGER"), ("club_id", "TEXT"), ("name_zh", "TEXT")):
+    for col, decl in (("player_id", "INTEGER"), ("club_id", "TEXT"), ("name_zh", "TEXT"),
+                      ("value", "REAL")):
         if col not in have:
             conn.execute(f"ALTER TABLE fm_squads ADD COLUMN {col} {decl}")
 

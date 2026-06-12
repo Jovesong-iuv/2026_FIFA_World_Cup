@@ -146,6 +146,7 @@ def fetch_squad(team_id: int, name_for_slug: str = "team") -> list[dict]:
                 "club_id": mb.get("ccode"),
                 "rating": _to_float(mb.get("rating")),
                 "injury": _injury_text(mb.get("injury")),
+                "value": mb.get("transferValue"),
             })
     return out
 

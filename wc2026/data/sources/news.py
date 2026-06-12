@@ -133,3 +133,54 @@ def extract_injuries(team_home: str, team_away: str, items: list[dict]) -> dict 
     home = data.get("home", []) if isinstance(data, dict) else []
     away = data.get("away", []) if isinstance(data, dict) else []
     return {"home": home, "away": away, "source": "llm", "raw": text}
+
+
+_SEVERITY = ("高", "中", "低")
+
+
+def _parse_risk_payload(text: str) -> dict:
+    """解析风险标签 JSON → {"home":[{tag,severity,note}], "away":[...]}；非法输入降级为空。"""
+    try:
+        data = json.loads(_strip_json(text))
+    except Exception:
+        return {"home": [], "away": []}
+    if not isinstance(data, dict):
+        return {"home": [], "away": []}
+
+    def clean(side: str) -> list:
+        out = []
+        for t in (data.get(side) or []):
+            if isinstance(t, dict) and t.get("tag"):
+                out.append({
+                    "tag": str(t["tag"])[:12],
+                    "severity": t["severity"] if t.get("severity") in _SEVERITY else "中",
+                    "note": str(t.get("note", ""))[:60],
+                })
+        return out
+
+    return {"home": clean("home"), "away": clean("away")}
+
+
+def extract_risk_tags(team_home: str, team_away: str, items: list[dict]) -> dict | None:
+    """用 LLM 从新闻标题抽取两队的「风险标签」（伤停/停赛/状态/内部矛盾/主帅/疲劳/舆论等）。
+
+    返回 {"home":[{tag,severity,note}], "away":[...], "source":"llm", "raw":...}；
+    LLM 不可用或无新闻返回 None。每条 severity 为 高/中/低；信息不足则对应队为空数组。
+    """
+    if not items:
+        return None
+    headlines = "\n".join(f"- [{x['source']}] {x['title']}" for x in items[:20])
+    prompt = (
+        f"下面是足球新闻标题。只依据这些标题，分别为「{zh(team_home)}」(键 home) 和"
+        f"「{zh(team_away)}」(键 away) 抽取**对比赛有负面影响的风险标签**："
+        "如 核心伤停 / 多人缺阵 / 停赛 / 状态低迷 / 内部矛盾 / 主帅问题 / 旅途疲劳 / 舆论压力 等。\n"
+        "严格只输出 JSON，形如："
+        '{"home":[{"tag":"核心伤停","severity":"高|中|低","note":"简述"}],"away":[]}\n'
+        "规则：tag 不超过 12 字；只写标题中有依据的；没有就给空数组；不要编造、不要输出 JSON 以外任何字符。\n\n"
+        + headlines
+    )
+    try:
+        text = provider.chat(prompt, max_tokens=2000, temperature=0.1, timeout=120)
+    except provider.LLMError:
+        return None
+    return {**_parse_risk_payload(text), "source": "llm", "raw": text}

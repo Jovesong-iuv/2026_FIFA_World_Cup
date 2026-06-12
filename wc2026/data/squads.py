@@ -50,13 +50,13 @@ def refresh_fm_squad(team_lib: str) -> dict:
         rows = [(
             team_lib, p["name"], p["number"], p["position"], p["age"], p["club"],
             p["rating"], 1 if p["injury"] else 0, p["injury"], now,
-            p.get("player_id"), p.get("club_id"), old_zh.get(p["name"]),
+            p.get("player_id"), p.get("club_id"), old_zh.get(p["name"]), p.get("value"),
         ) for p in players if p["name"]]
         conn.execute("DELETE FROM fm_squads WHERE team_lib=?", (team_lib,))
         conn.executemany(
             "INSERT OR REPLACE INTO fm_squads "
             "(team_lib, player_name, number, position, age, club, rating, injured, injury_note, "
-            "updated_at, player_id, club_id, name_zh) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+            "updated_at, player_id, club_id, name_zh, value) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     return {"team_lib": team_lib, "fm_name": fm_name, "count": len(rows),
             "rated": sum(1 for p in players if p["rating"] is not None),
             "injured": sum(1 for p in players if p["injury"])}
@@ -69,7 +69,7 @@ def load_fm_squad(team_lib: str) -> dict | None:
             "SELECT fm_name FROM fm_teams WHERE team_lib=?", (team_lib,)).fetchone()
         rows = conn.execute(
             "SELECT player_name, number, position, age, club, rating, injured, injury_note, "
-            "updated_at, player_id, club_id, name_zh "
+            "updated_at, player_id, club_id, name_zh, value "
             "FROM fm_squads WHERE team_lib=? ORDER BY COALESCE(number, 999)", (team_lib,)).fetchall()
     if not rows:
         return None
@@ -86,6 +86,28 @@ def load_fm_squad(team_lib: str) -> dict | None:
     groups = {k: v for k, v in groups.items() if v}
     return {"fm_name": trow["fm_name"] if trow else team_lib,
             "updated_at": updated, "groups": groups}
+
+
+def squad_value_summary(groups: dict | None) -> dict:
+    """从 load_fm_squad 的 groups 聚合身价（FotMob transferValue，单位欧元）。
+
+    返回 {total, by_position, top5, count, valued_count}。
+    无 value 的球员计入人数但不计身价；total 为 0 时表示该队暂无身价数据（需重新拉取）。
+    """
+    players = [p for plist in (groups or {}).values() for p in plist]
+    valued = [p for p in players if p.get("value")]
+    by_position: dict = {}
+    for p in players:
+        pos = p.get("position") or "Other"
+        by_position[pos] = by_position.get(pos, 0.0) + float(p.get("value") or 0.0)
+    top5 = sorted(valued, key=lambda p: float(p["value"]), reverse=True)[:5]
+    return {
+        "total": sum(float(p["value"]) for p in valued),
+        "by_position": by_position,
+        "top5": top5,
+        "count": len(players),
+        "valued_count": len(valued),
+    }
 
 
 def _strip_json(text: str) -> str:

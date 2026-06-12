@@ -161,7 +161,7 @@ def summarize(
 
 def market_candidates(mat: np.ndarray, lam: float, mu: float, home_label: str,
                       away_label: str) -> list[dict]:
-    """生成单场可选市场候选项，供投注分配与串关复用。赔率默认公平赔率。"""
+    """生成单场可选市场候选项，供串关组合复用。赔率默认公平赔率。"""
     markets = summarize(mat)
     rows = []
     x = markets["1x2"]
