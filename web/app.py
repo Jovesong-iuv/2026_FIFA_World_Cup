@@ -22,6 +22,7 @@ from wc2026.data.team_names import zh
 from wc2026.llm import reasoning
 from wc2026.markets import derive, value
 from wc2026.models.predictor import DC_PATH, ELO_PATH, get_model, train_and_save
+from wc2026.access import owner_key_matches
 
 st.set_page_config(page_title="2026 世界杯预测", page_icon="⚽", layout="wide")
 HOSTS = {"Mexico", "Canada", "United States"}
@@ -250,6 +251,33 @@ def require_login() -> dict:
         else:
             st.error("账号或密码错误。")
     st.stop()
+
+
+def is_owner() -> bool:
+    """所有者(可执行拉取/训练/AI 等费用动作)：未设 OWNER_KEY 则全功能(本机/单人)；
+    设了 OWNER_KEY 则需 URL ?owner=<该值> 匹配，否则为只读访客。"""
+    try:
+        supplied_owner = st.query_params.get("owner", "")
+    except Exception:
+        supplied_owner = None
+    return owner_key_matches(settings.owner_key, supplied_owner)
+
+
+def action_button(label: str, **kwargs) -> bool:
+    """需所有者权限的动作按钮：所有者正常渲染按钮；访客显示锁定提示并返回 False。"""
+    if is_owner():
+        return st.button(label, **kwargs)
+    st.caption(f"🔒 {label} — 仅所有者可操作（访客只读）")
+    return False
+
+
+def render_access_banner() -> None:
+    """侧栏显示当前访问模式；访客提示如何成为所有者。"""
+    if is_owner():
+        if settings.owner_key:
+            st.caption("🔑 所有者模式：可拉取赔率 / 训练 / AI。")
+    else:
+        st.caption("👀 只读访客：可浏览与选择查看；拉取 / 训练 / AI 按钮已锁定（避免消耗配额与 token）。")
 
 
 def render_admin_user_panel() -> None:
@@ -734,6 +762,7 @@ with st.sidebar:
         page_options.append("用户管理")
     page = st.radio("页面", page_options, horizontal=True)
     render_admin_user_panel()
+    render_access_banner()
     st.divider()
     if page == "串关组合":
         st.caption("LLM 理由/分析：" + ("✅ 已配置，可手动触发" if llm_configured() else "⚠️ 规则模板(未接入)"))
@@ -795,7 +824,7 @@ with st.sidebar:
                             help="末轮出线已定可能消极比赛/算计排名：下调进球并提示爆冷风险")
                  if use_context else False)
     st.divider()
-    if st.button("🔄 一键全量刷新", help="重抓历史数据+重训模型+更新赛程"):
+    if action_button("🔄 一键全量刷新", help="重抓历史数据+重训模型+更新赛程"):
         with st.spinner("抓数据 + 重训 + 赛程中…"):
             ingest_international_results()
             train_and_save()
@@ -874,7 +903,7 @@ with right:
     section_title("为什么")
     reason_key = f"reason:{home}:{away}:{neutral}:{use_context}:{tank_risk}"
     display_reason = st.session_state.get(reason_key, reason)
-    if llm_configured() and st.button("🤖 手动生成 AI 理由", key=f"ai_reason:{home}:{away}:{neutral}:{use_context}:{tank_risk}"):
+    if llm_configured() and action_button("🤖 手动生成 AI 理由", key=f"ai_reason:{home}:{away}:{neutral}:{use_context}:{tank_risk}"):
         with st.spinner("生成 AI 理由…"):
             display_reason = reasoning.generate_reason(model, home, away, neutral, markets, use_llm=True)
         st.session_state[reason_key] = display_reason
@@ -983,7 +1012,7 @@ st.caption("策略：放弃 1-3 球高风险区间（易遇 0-0 / 强队零封�
 with st.expander("💰 价值 & 凯利（输入体彩/盘口赔率）", expanded=False):
     st.caption("输入该场实际赔率(十进制/欧赔)，对比模型概率找价值盘。默认填的是模型公平赔率。")
     vc1, vc2, vc3 = st.columns(3)
-    if st.button("🔄 拉取本场可用赔率预填", help="需要 ODDS_API_KEY；会尝试预填胜平负、让球、大小球等 The Odds API 支持的市场。"):
+    if action_button("🔄 拉取本场可用赔率预填", help="需要 ODDS_API_KEY；会尝试预填胜平负、让球、大小球等 The Odds API 支持的市场。"):
         from wc2026.data.sources import odds_api
         try:
             with st.spinner("拉取 The Odds API 赔率…"):
@@ -1135,7 +1164,7 @@ with st.expander("🏆 世界杯历史（历届战绩 + 世界杯交锋）", exp
 
 with st.expander("📰 相关资讯", expanded=False):
     news_key = f"news:{home}:{away}"
-    if st.button("🔄 手动刷新资讯", key=f"refresh_news:{home}:{away}"):
+    if action_button("🔄 手动刷新资讯", key=f"refresh_news:{home}:{away}"):
         with st.spinner("抓取相关资讯…"):
             items, fallback = load_news(home, away)
         st.session_state[news_key] = {"items": items, "fallback": fallback}
@@ -1149,12 +1178,12 @@ with st.expander("📰 相关资讯", expanded=False):
             for it in items[:8]:
                 st.markdown(f"- [{it['title']}]({it['link']}) · {it['source']}")
             if llm_configured():
-                if st.button("🤖 手动分析资讯", key=f"analyze_news:{home}:{away}"):
+                if action_button("🤖 手动分析资讯", key=f"analyze_news:{home}:{away}"):
                     ana = news_mod.analyze_news(home, away, items)
                     if ana:
                         st.info("🤖 AI 资讯分析：" + ana["text"])
                 inj_key = f"injuries_data:{home}:{away}"
-                if st.button("🤖 提取伤停 / 缺阵线索", key=f"injuries:{home}:{away}"):
+                if action_button("🤖 提取伤停 / 缺阵线索", key=f"injuries:{home}:{away}"):
                     with st.spinner("AI 从新闻抽取伤停线索…"):
                         st.session_state[inj_key] = news_mod.extract_injuries(home, away, items)
                 inj = st.session_state.get(inj_key)
@@ -1170,7 +1199,7 @@ with st.expander("📰 相关资讯", expanded=False):
                             st.caption(f"🤕 {nm}：标题中未见明确伤停信息")
                     st.caption("⚠️ 仅据新闻标题由 AI 推断，可能不全 / 滞后，仅供参考。")
                 risk_key = f"risktags_data:{home}:{away}"
-                if st.button("🚩 提取新闻风险标签", key=f"risktags:{home}:{away}"):
+                if action_button("🚩 提取新闻风险标签", key=f"risktags:{home}:{away}"):
                     with st.spinner("AI 从新闻抽取风险标签…"):
                         st.session_state[risk_key] = news_mod.extract_risk_tags(home, away, items)
                 risk = st.session_state.get(risk_key)
@@ -1202,7 +1231,7 @@ with st.expander("👥 阵容 / 评分 / 伤停（FotMob · 免费无需 key · 
                "世界杯赛前多为空（显示 —），开赛后逐场填充；**伤停**通常已实时（来自俱乐部伤情）。"
                "📋 本面板纯展示，不改变上方任何概率。已内置限速，请勿高频刷新。")
 
-    if st.button("🔄 拉取本场两队阵容（FotMob）"):
+    if action_button("🔄 拉取本场两队阵容（FotMob）"):
         try:
             with st.spinner("从 FotMob 拉取两队阵容…"):
                 r_home = squads_mod.refresh_fm_squad(home)
@@ -1213,7 +1242,7 @@ with st.expander("👥 阵容 / 评分 / 伤停（FotMob · 免费无需 key · 
         except Exception as exc:
             st.error(f"拉取失败：{exc}（FotMob 为非官方页面解析，结构变动/限流都可能导致失败）")
 
-    if llm_configured() and st.button("🤖 AI 音译球员名（两队 · 结果缓存）"):
+    if llm_configured() and action_button("🤖 AI 音译球员名（两队 · 结果缓存）"):
         try:
             with st.spinner("AI 音译球员名…"):
                 t_home = squads_mod.translate_player_names(home)
@@ -1344,7 +1373,7 @@ with st.expander("💰 价值扫描（全场次自动找价值盘，需 The Odds
         st.warning("⚠️ 纯模型 vs 市场会产生大量**假价值**（本模型对部分队伍有高估、回测显示会失灵）。"
                    "超大 edge(>50%) 几乎一定是模型错而非庄家错。用下方滑块向市场收缩，只留温和分歧。")
         blend = st.slider("模型权重（越低越信市场，推荐 0.4–0.6）", 0.0, 1.0, 0.5, 0.1)
-        if st.button("📟 查询 The Odds API 剩余请求"):
+        if action_button("📟 查询 The Odds API 剩余请求"):
             from wc2026.data.sources import odds_api
             try:
                 with st.spinner("查询配额…"):
@@ -1352,7 +1381,7 @@ with st.expander("💰 价值扫描（全场次自动找价值盘，需 The Odds
             except Exception as exc:
                 st.error(f"配额查询失败：{exc}")
         render_quota(st.session_state.get("odds_quota", {}))
-        if st.button("🔍 拉取当前赔率并扫描"):
+        if action_button("🔍 拉取当前赔率并扫描"):
             from wc2026.data.sources import odds_api
             try:
                 with st.spinner("拉取赔率并扫描…"):
@@ -1379,7 +1408,7 @@ with st.expander("💰 价值扫描（全场次自动找价值盘，需 The Odds
 
 with st.expander("📈 模型回测（历届世界杯校准验证）", expanded=False):
     st.caption("样本外：用开赛前数据训练、预测该届。每届需训练约 10 秒。")
-    if st.button("▶️ 运行回测（2014 / 2018 / 2022）"):
+    if action_button("▶️ 运行回测（2014 / 2018 / 2022）"):
         from wc2026.backtest.runner import backtest_ensemble
         rows = []
         with st.spinner("训练并回测中…"):
