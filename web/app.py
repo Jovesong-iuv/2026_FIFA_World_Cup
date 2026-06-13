@@ -1364,6 +1364,62 @@ with st.expander("👥 阵容 / 评分 / 伤停（FotMob · 免费无需 key · 
             st.caption("（暂无评分数据——世界杯赛前 FotMob 评分多为空，开赛后逐场填充；伤停信息仍有效。）")
 
 
+with st.expander("🤖 AI 对话（结合本场全部已加载数据问答 / 粘贴材料分析）", expanded=False):
+    if not llm_configured():
+        st.caption("需接入 LLM（在 .env 配置 LLM_API_KEY）后可用；当前未配置。")
+    elif not is_owner():
+        st.caption("🔒 AI 对话仅所有者可用（会消耗 LLM token）；访客只读。")
+    else:
+        from wc2026.llm import match_chat
+        from wc2026.analysis import schedule as _schx
+        from wc2026.data import squads as _squads
+        _cres = None
+        if selected_fixture is not None:
+            _rr = _schx.match_result(selected_fixture.get("home_score"), selected_fixture.get("away_score"),
+                                     zh(home), zh(away))
+            _cres = _rr["text"] if _rr["finished"] else None
+        _news = st.session_state.get(f"news:{home}:{away}")
+        _news_titles = [it["title"] for it in _news["items"][:8]] if _news and _news.get("items") else None
+        _sv = None
+        if sq_home or sq_away:
+            _a = _squads.squad_value_summary(sq_home["groups"] if sq_home else None)
+            _b = _squads.squad_value_summary(sq_away["groups"] if sq_away else None)
+            if _a["total"] or _b["total"]:
+                _sv = f"{zh(home)} €{_a['total'] / 1e6:.0f}m vs {zh(away)} €{_b['total'] / 1e6:.0f}m"
+        ev = reason["evidence"]
+        ctx = match_chat.build_context({
+            "home": zh(home), "away": zh(away),
+            "home_rank": _hr, "away_rank": _ar, "rank_total": _rtot,
+            "result": _cres, "context_notes": context_notes,
+            "xg": (lam, mu), "probs": x,
+            "over_under25": markets["over_under"].get("2.5"),
+            "goal_bands": markets["goal_bands"], "btts": markets["btts"]["yes"],
+            "correct_score_top": markets["correct_score_top"],
+            "upset": ui, "strength": sp, "goal_rec": gs,
+            "h2h": ev["h2h"], "home_form": ev["home_form"], "away_form": ev["away_form"],
+            "squad_value": _sv, "news_titles": _news_titles,
+        })
+        chat_key = f"matchchat:{home}:{away}"
+        history = st.session_state.setdefault(chat_key, [])
+        for m in history:
+            st.markdown(f"**{'🧑 你' if m['role'] == 'user' else '🤖 AI'}：** {m['content']}")
+        q = st.text_area("输入问题，或粘贴文字让 AI 结合本场数据分析", key=f"chatq:{home}:{away}", height=90,
+                         placeholder="例：这场适合打什么盘口？爆冷风险来自哪？把我这段情报结合数据分析一下…")
+        cc1, cc2, cc3 = st.columns([1, 1, 2])
+        if cc1.button("发送", key=f"chatsend:{home}:{away}") and q.strip():
+            history.append({"role": "user", "content": q.strip()})
+            with st.spinner("AI 结合本场数据分析中…"):
+                ans = match_chat.ask(q.strip(), ctx, history)
+            history.append({"role": "assistant", "content": ans["text"]})
+            st.rerun()
+        if cc2.button("清空对话", key=f"chatclear:{home}:{away}"):
+            st.session_state[chat_key] = []
+            st.rerun()
+        if st.checkbox("查看 AI 看到的本场数据摘要", key=f"chatctx:{home}:{away}"):
+            st.code(ctx)
+        st.caption("AI 仅依据本场已加载数据作答；未拉取的赔率/阵容/资讯不在其中（先在上方拉取可纳入）。仅供参考、非投注建议。")
+
+
 with st.expander("💰 价值扫描（全场次自动找价值盘，需 The Odds API key）", expanded=False):
     from wc2026.config import settings as _settings
     if not _settings.odds_api_key:
