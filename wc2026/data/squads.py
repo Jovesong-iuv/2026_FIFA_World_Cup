@@ -110,6 +110,33 @@ def squad_value_summary(groups: dict | None) -> dict:
     }
 
 
+FORMATIONS = {
+    "4-3-3": {"Goalkeeper": 1, "Defender": 4, "Midfielder": 3, "Attacker": 3},
+    "4-4-2": {"Goalkeeper": 1, "Defender": 4, "Midfielder": 4, "Attacker": 2},
+    "3-5-2": {"Goalkeeper": 1, "Defender": 3, "Midfielder": 5, "Attacker": 2},
+}
+
+
+def estimate_lineup(groups: dict | None, formation: str = "4-3-3") -> dict:
+    """启发式「预计首发 XI」：按阵型，每个位置取身价(次选评分)最高、未伤停的球员。
+
+    首发是不确定的——这只是基于身价/评分的估计。返回 {formation, xi, total_value, size}。
+    """
+    counts = FORMATIONS.get(formation, FORMATIONS["4-3-3"])
+    xi = []
+    for pos, n in counts.items():
+        avail = [p for p in (groups or {}).get(pos, []) if not p.get("injured")]
+        avail.sort(key=lambda p: (float(p.get("value") or 0.0), float(p.get("rating") or 0.0)),
+                   reverse=True)
+        xi.extend(avail[:n])
+    return {
+        "formation": formation,
+        "xi": xi,
+        "total_value": sum(float(p.get("value") or 0.0) for p in xi),
+        "size": len(xi),
+    }
+
+
 def _strip_json(text: str) -> str:
     t = text.strip()
     m = re.search(r"```(?:json)?\s*(.+?)\s*```", t, re.S)

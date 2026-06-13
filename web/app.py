@@ -566,6 +566,8 @@ def _match_labels(probs: dict, upset_idx: int, home: str, neutral: bool) -> list
 def _home_rows(_sig: str) -> list[dict]:
     """逐场计算胜平负 + 爆冷指数 + 标签。_sig 用于按模型版本缓存。"""
     from wc2026.analysis import upset
+    from wc2026.analysis import ranking as rk
+    rank_map = rk.elo_rank_map(model)
     out = []
     for f in fixtures:
         home, away = f["home_team"], f["away_team"]
@@ -574,15 +576,22 @@ def _home_rows(_sig: str) -> list[dict]:
         ui = upset.upset_index(probs, home, away)
         out.append({**f, "neutral": neutral, "probs": probs,
                     "upset": ui["index"], "upset_level": ui["level"],
+                    "home_rank": rank_map.get(home), "away_rank": rank_map.get(away),
                     "labels": _match_labels(probs, ui["index"], home, neutral)})
     return out
 
 
 def _home_card_html(r: dict) -> str:
+    from wc2026.analysis import schedule as sch
+    from wc2026.data.flags import flag_emoji
     p = r["probs"]
     ph, pd, pa = p["home"], p["draw"], p["away"]
-    when = r.get("date_utc") or ""
-    head = f'{_group_short(r["group_name"])}第{r.get("round_number", "")}轮 · {when[:10]} {when[11:16]}'
+    bj = sch.beijing(r.get("date_utc"))
+    res = sch.match_result(r.get("home_score"), r.get("away_score"),
+                           zh(r["home_team"]), zh(r["away_team"]))
+    head = f'{_group_short(r["group_name"])}第{r.get("round_number", "")}轮 · {bj["full"]}（北京）'
+    status = (f'<span style="background:#16a34a;color:#fff;font-size:11px;padding:1px 8px;'
+              f'border-radius:10px;margin-left:6px;">完场 {res["score"]}</span>') if res["finished"] else ""
     bar = (
         '<div style="display:flex;height:9px;border-radius:6px;overflow:hidden;margin:5px 0;">'
         f'<div style="width:{ph * 100:.0f}%;background:#16a34a;"></div>'
@@ -593,13 +602,18 @@ def _home_card_html(r: dict) -> str:
         f'<span style="background:{c};color:#fff;font-size:11px;padding:1px 7px;'
         f'border-radius:10px;margin-right:4px;">{t}</span>' for t, c in r["labels"]
     )
+    result_line = (f'<div style="font-weight:700;color:#16a34a;margin:4px 0;">完场 {res["score"]} · {res["text"]}</div>'
+                   if res["finished"] else "")
     return (
         '<div style="border:1px solid var(--wc-line);border-radius:10px;padding:12px 14px;'
         'margin-bottom:12px;background:var(--wc-surface);">'
-        f'<div style="font-size:12px;color:var(--wc-muted);margin-bottom:4px;">{head}</div>'
+        f'<div style="font-size:12px;color:var(--wc-muted);margin-bottom:4px;">{head}{status}</div>'
         '<div style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;">'
-        f'<span>{zh(r["home_team"])}</span><span>{zh(r["away_team"])}</span></div>'
-        f'{bar}'
+        f'<span>{flag_emoji(r["home_team"])} {zh(r["home_team"])}</span>'
+        f'<span>{zh(r["away_team"])} {flag_emoji(r["away_team"])}</span></div>'
+        '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--wc-muted);">'
+        f'<span>世界第 {r.get("home_rank") or "—"}</span><span>世界第 {r.get("away_rank") or "—"}</span></div>'
+        f'{result_line}{bar}'
         '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--wc-muted);">'
         f'<span>胜 {ph:.0%}</span><span>平 {pd:.0%}</span><span>负 {pa:.0%}</span></div>'
         f'<div style="font-size:12px;color:var(--wc-muted);margin-top:6px;">📍 {r.get("location", "")}</div>'
@@ -647,15 +661,53 @@ def render_home(model) -> None:
             return False
         return True
 
-    shown = sorted([r for r in rows if keep(r)], key=lambda r: r.get("date_utc") or "")
-    st.caption(f"共 {len(shown)} 场（按开赛时间排序）。胜平负概率条：绿=主胜 / 灰=平 / 蓝=客胜。")
+    from wc2026.analysis import schedule as _sch
+    from datetime import datetime as _dt, timezone as _tz
+    shown = _sch.sort_fixtures([r for r in rows if keep(r)], _dt.now(_tz.utc))
+    st.caption(f"共 {len(shown)} 场（未开赛在前、已结束在后；时间为北京时间）。"
+               "胜平负概率条：绿=主胜 / 灰=平 / 蓝=客胜。")
     cols = st.columns(2)
     for i, r in enumerate(shown):
         with cols[i % 2]:
             st.markdown(_home_card_html(r), unsafe_allow_html=True)
-    st.caption("说明：未显示国旗与 FIFA 排名（项目暂无该数据源）；"
+    st.caption("说明：国旗 + 世界排名（模型 Elo，非 FIFA 官方）；已完赛显示比分并排到列表下方；"
                "价值 / 让球 / 身价 / 伤停类标签需拉取实时赔率或外部数据，未在首页批量计算。"
                "单场详情页可查看完整价值判断与爆冷因子。")
+
+
+def render_schedule(model) -> None:
+    from wc2026.analysis import schedule as sch, ranking as rk
+    from wc2026.data.flags import flag_emoji
+    from datetime import datetime, timezone
+    section_title("小组赛赛程")
+    if not fixtures:
+        st.warning("暂无赛程数据（需先刷新 2026 赛程）。")
+        return
+    rank_map = rk.elo_rank_map(model)
+    groups = sorted({f["group_name"] for f in fixtures if f.get("group_name")})
+    fg = st.selectbox("分组", ["全部"] + groups, key="sched_group")
+    flist = [f for f in fixtures if fg == "全部" or f.get("group_name") == fg]
+    flist = sch.sort_fixtures(flist, datetime.now(timezone.utc))
+
+    def _cell(t):
+        r = rank_map.get(t)
+        return f"{flag_emoji(t)} {zh(t)}（#{r}）" if r else f"{flag_emoji(t)} {zh(t)}"
+
+    rows = []
+    for f in flist:
+        bj = sch.beijing(f.get("date_utc"))
+        res = sch.match_result(f.get("home_score"), f.get("away_score"))
+        rows.append({
+            "小组": _group_short(f.get("group_name", "")),
+            "轮次": f"第{f.get('round_number', '')}轮",
+            "日期": bj["date"], "周": bj["weekday"], "北京时间": bj["time"],
+            "主队": _cell(f["home_team"]), "客队": _cell(f["away_team"]),
+            "比分 / 状态": (f"✅ {res['score']}" if res["finished"] else "未开赛"),
+            "球场": f.get("location", ""),
+        })
+    st.caption(f"共 {len(rows)} 场（未开赛在前、已结束在后；时间为北京时间 UTC+8）。")
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    st.caption("世界排名为模型 Elo 排名（非 FIFA 官方）；比分在赛程数据更新后自动显示。")
 
 
 inject_design_system()
@@ -670,7 +722,7 @@ render_hero(
 
 with st.sidebar:
     st.header("功能")
-    page_options = ["首页", "单场分析", "小组出线", "串关组合"]
+    page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "串关组合"]
     if user["role"] == "admin":
         page_options.append("用户管理")
     page = st.radio("页面", page_options, horizontal=True)
@@ -681,6 +733,9 @@ with st.sidebar:
 
 if page == "首页":
     render_home(model)
+    st.stop()
+if page == "小组赛赛程":
+    render_schedule(model)
     st.stop()
 if page == "串关组合":
     render_parlay_builder()
@@ -697,18 +752,27 @@ with st.sidebar:
     mode = st.radio("方式", ["按赛程", "自定义对阵"], horizontal=True)
     venue_info = None
     if mode == "按赛程" and fixtures:
+        from wc2026.analysis import schedule as _sch
+        from datetime import datetime as _dt, timezone as _tz
         groups = sorted({f["group_name"] for f in fixtures})
         g = st.selectbox("分组", ["全部"] + groups)
-        flist = [f for f in fixtures if g == "全部" or f["group_name"] == g]
-        idx = st.selectbox(
-            "场次", range(len(flist)),
-            format_func=lambda i: f"{zh(flist[i]['home_team'])} vs {zh(flist[i]['away_team'])} ({flist[i]['date_utc'][:10]})",
-        )
+        flist = _sch.sort_fixtures(
+            [f for f in fixtures if g == "全部" or f["group_name"] == g], _dt.now(_tz.utc))
+
+        def _fx_label(i):
+            f = flist[i]
+            res = _sch.match_result(f.get("home_score"), f.get("away_score"))
+            tag = f"✅ {res['score']}" if res["finished"] else _sch.beijing(f["date_utc"])["full"]
+            return f"{zh(f['home_team'])} vs {zh(f['away_team'])}（{tag}）"
+
+        idx = st.selectbox("场次", range(len(flist)), format_func=_fx_label)
         sel = flist[idx]
+        selected_fixture = sel
         home, away = sel["home_team"], sel["away_team"]
-        venue_info = f"🗓 {sel['date_utc'][:16]} · {sel['group_name']} · 📍{sel['location']}"
+        venue_info = f"🗓 {_sch.beijing(sel['date_utc'])['full']}（北京） · {sel['group_name']} · 📍{sel['location']}"
         default_neutral = home not in HOSTS
     else:
+        selected_fixture = None
         teams = model.teams
         di = teams.index("Spain") if "Spain" in teams else 0
         ai = teams.index("Germany") if "Germany" in teams else 1
@@ -746,6 +810,21 @@ if home == away:
 section_title(f"{zh(home)} vs {zh(away)}")
 if venue_info:
     st.caption(venue_info)
+from wc2026.analysis import ranking as _ranking
+_hr, _rtot = _ranking.elo_rank(model, home)
+_ar, _ = _ranking.elo_rank(model, away)
+st.caption(f"🌐 世界排名（模型 Elo，非 FIFA 官方）：{zh(home)} 第 {_hr or '—'} 名 · "
+           f"{zh(away)} 第 {_ar or '—'} 名（共 {_rtot} 队）")
+
+if selected_fixture is not None:
+    from wc2026.analysis import schedule as _sch2
+    from wc2026.data.flags import flag_emoji as _flag
+    _res = _sch2.match_result(selected_fixture.get("home_score"), selected_fixture.get("away_score"),
+                              zh(home), zh(away))
+    if _res["finished"]:
+        st.success(f"🏁 已完赛　{_flag(home)} {zh(home)}　**{_res['score']}**　{zh(away)} {_flag(away)}　·　{_res['text']}")
+    else:
+        st.info(f"⏳ 未开赛（{_sch2.beijing(selected_fixture.get('date_utc'))['full']} 北京时间）；以下为赛前模型预测。")
 
 if use_context:
     from wc2026.analysis import context
@@ -870,6 +949,29 @@ with m5:
 with m6:
     st.caption("说明")
     st.write("半全场按主队视角：第一个字=上半场结果，第二个字=全场结果。")
+
+section_title("进球区间推荐")
+from wc2026.analysis import goal_strategy
+gs = goal_strategy.recommend(mat, lam, mu)
+_gs_emoji = {"满足": "✅ 满足", "不满足": "❌ 不满足", "需盘口确认": "🔶 需盘口确认"}
+gcol1, gcol2 = st.columns([1, 2])
+with gcol1:
+    if gs["recommend"] == "回避":
+        st.metric("推荐区间", "回避", "低进球/闷局风险", delta_color="off")
+    else:
+        st.metric("推荐区间", gs["recommend"], f"模型概率 {gs['confidence']:.0%}", delta_color="off")
+    st.caption(f"期望进球 {gs['xg_home']:.2f} : {gs['xg_away']:.2f}（合计 {gs['xg_total']:.2f}）")
+    bp = gs["probs"]
+    st.caption(f"0-1球 {bp['0-1']:.0%} · 2-3球 {bp['2-3']:.0%} · 3-4球 {bp['3-4']:.0%} · 4+球 {bp['4+']:.0%}")
+with gcol2:
+    for r in gs["reasons"]:
+        st.markdown(f"- {r}")
+    if gs["checklist"]:
+        st.dataframe(pd.DataFrame([{"条件": c, "状态": _gs_emoji.get(s, s)} for c, s in gs["checklist"]]),
+                     hide_index=True, width="stretch")
+st.caption("策略：放弃 1-3 球高风险区间（易遇 0-0 / 强队零封），聚焦 2-3 球与 3-4 球。"
+           "盘口 / 水位类条件需结合真实赔率确认。风险控制：单场投注≤10% 资金，连黑 3 场停手，"
+           "不碰冷门联赛与高水盘。模型有误差，仅供参考。")
 
 with st.expander("💰 价值 & 凯利（输入体彩/盘口赔率）", expanded=False):
     st.caption("输入该场实际赔率(十进制/欧赔)，对比模型概率找价值盘。默认填的是模型公平赔率。")
@@ -1173,6 +1275,32 @@ with st.expander("👥 阵容 / 评分 / 伤停（FotMob · 免费无需 key · 
             st.caption("身价代表阵容上限，不等于比赛结果；低身价球队若防守纪律强、反击高效，仍可能守住让球盘。")
         else:
             st.caption("（暂无身价数据——请点上方「拉取本场两队阵容」重新拉取；FotMob transferValue 偶有缺失。）")
+
+        st.markdown("**预计首发（估计）**")
+        st.caption("⚠️ 大名单是确定的，但谁首发不确定；以下按身价 / 评分、排除伤停、按所选阵型估计，仅供参考。")
+        formation = st.selectbox("阵型", list(squads_mod.FORMATIONS.keys()), key=f"formation:{home}:{away}")
+
+        def _eur_xi(v):
+            return f"€{v / 1e9:.2f}b" if v >= 1e9 else f"€{v / 1e6:.1f}m"
+
+        lc1, lc2 = st.columns(2)
+        for col, team, sq in [(lc1, home, sq_home), (lc2, away, sq_away)]:
+            with col:
+                if not sq:
+                    st.caption(f"{zh(team)}：无阵容缓存。")
+                    continue
+                lineup = squads_mod.estimate_lineup(sq["groups"], formation)
+                cap = f"{zh(team)} · {lineup['formation']} · {lineup['size']} 人"
+                if lineup["total_value"]:
+                    cap += f" · 预计首发身价 {_eur_xi(lineup['total_value'])}"
+                st.caption(cap)
+                st.dataframe(pd.DataFrame([{
+                    "位置": squads_mod.POS_ZH.get(p.get("position"), p.get("position")),
+                    "球员": (f"{p['name_zh']}（{p['player_name']}）" if p.get("name_zh") else p["player_name"]),
+                    "号": p.get("number"),
+                    "评分": (f"{p['rating']:.2f}" if p.get("rating") is not None else "—"),
+                    "身价": (_eur_xi(float(p["value"])) if p.get("value") else "—"),
+                } for p in lineup["xi"]]), hide_index=True, width="stretch")
 
         def _pos_avg(sq):
             out = {}

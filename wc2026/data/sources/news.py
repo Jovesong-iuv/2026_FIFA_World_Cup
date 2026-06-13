@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import xml.etree.ElementTree as ET
+from urllib.parse import quote
 
 import requests
 
@@ -17,16 +18,26 @@ from wc2026.llm import provider
 FEEDS = {
     "BBC": "https://feeds.bbci.co.uk/sport/football/rss.xml",
     "ESPN": "https://www.espn.com/espn/rss/soccer/news",
+    "Guardian": "https://www.theguardian.com/football/rss",
+    "Sky Sports": "https://www.skysports.com/rss/12040",
 }
+
+# Google News RSS 定向搜索（按球队中文名取本地化结果），是国家队新闻的主要来源
+_GOOGLE_NEWS = "https://news.google.com/rss/search?q={q}&hl=zh-CN&gl=CN&ceid=CN:zh"
 
 # 部分球队的新闻别名（英文源里的常见写法）
 _EXTRA = {
     "United States": ["USA", "USMNT"],
     "South Korea": ["Korea"],
-    "Netherlands": ["Dutch"],
-    "Germany": ["German"],
-    "Spain": ["Spanish"],
+    "North Korea": ["Korea DPR"],
+    "Netherlands": ["Dutch", "Holland"],
+    "Germany": ["German", "Die Mannschaft"],
+    "Spain": ["Spanish", "La Roja"],
     "Ivory Coast": ["Cote d'Ivoire"],
+    "England": ["Three Lions"],
+    "Saudi Arabia": ["Saudi"],
+    "Czech Republic": ["Czechia"],
+    "South Africa": ["Bafana"],
 }
 
 _UA = {"User-Agent": "Mozilla/5.0 (compatible; WC2026Predictor/0.1)"}
@@ -67,16 +78,37 @@ def _keywords(team: str) -> list[str]:
     return [k.lower() for k in ([team] + _EXTRA.get(team, []))]
 
 
+def google_news_for(team: str, limit: int = 8, timeout: float = 15) -> list[dict]:
+    """Google News RSS 按球队中文名定向搜索（本地化中文结果）。失败返回 []。"""
+    q = quote(f"{zh(team)} 足球 国家队")
+    items = _parse_feed("Google News", _GOOGLE_NEWS.format(q=q), timeout)
+    for it in items:
+        it["matched"] = zh(team)
+    return items[:limit]
+
+
 def fetch_for_teams(teams: list[str], limit: int = 15, timeout: float = 20) -> list[dict]:
+    """多源汇总：先按球队做 Google News 定向搜索（中文结果），再用通用英文源按队名匹配补充。"""
+    out, seen = [], set()
+
+    def _add(it):
+        key = it.get("link") or it.get("title")
+        if key and key not in seen:
+            seen.add(key)
+            out.append(it)
+
+    for t in teams:
+        for it in google_news_for(t, timeout=timeout):
+            _add(it)
+
     kws = {kw for t in teams for kw in _keywords(t)}
-    matched = []
     for it in fetch_all(timeout):
         text = (it["title"] + " " + it["summary"]).lower()
         hit = next((kw for kw in kws if kw and kw in text), None)
         if hit:
-            it = dict(it, matched=hit)
-            matched.append(it)
-    return matched[:limit]
+            _add(dict(it, matched=hit))
+
+    return out[:limit]
 
 
 def analyze_news(team_home: str, team_away: str, items: list[dict]) -> dict | None:
