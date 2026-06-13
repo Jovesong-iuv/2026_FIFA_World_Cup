@@ -26,8 +26,8 @@ def build_context(d: dict) -> str:
     L = []
     L.append(f"比赛：{d.get('home','?')} vs {d.get('away','?')}")
     if d.get("home_rank") or d.get("away_rank"):
-        L.append(f"世界排名(模型Elo,非FIFA官方)：{d.get('home')} 第 {d.get('home_rank','—')} · "
-                 f"{d.get('away')} 第 {d.get('away_rank','—')}（共 {d.get('rank_total','—')} 队）")
+        L.append(f"世界排名(FIFA 官方,缺失回退Elo)：{d.get('home')} 第 {d.get('home_rank','—')} · "
+                 f"{d.get('away')} 第 {d.get('away_rank','—')}")
     L.append(f"赛果：{d['result']}" if d.get("result") else "赛果：未开赛（以下为赛前模型预测）")
     if d.get("context_notes"):
         L.append("情境调整：" + "；".join(d["context_notes"]))

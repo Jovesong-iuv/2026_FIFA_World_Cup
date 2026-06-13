@@ -602,16 +602,18 @@ def _home_rows(_sig: str) -> list[dict]:
     """逐场计算胜平负 + 爆冷指数 + 标签。_sig 用于按模型版本缓存。"""
     from wc2026.analysis import upset
     from wc2026.analysis import ranking as rk
-    rank_map = rk.elo_rank_map(model)
+    rank_map = rk.world_rank_map(model)
     out = []
     for f in fixtures:
         home, away = f["home_team"], f["away_team"]
         neutral = home not in HOSTS
         probs = predict_1x2_for_match(f, neutral)["probs"]
         ui = upset.upset_index(probs, home, away)
+        hr, ar = rank_map.get(home), rank_map.get(away)
         out.append({**f, "neutral": neutral, "probs": probs,
                     "upset": ui["index"], "upset_level": ui["level"],
-                    "home_rank": rank_map.get(home), "away_rank": rank_map.get(away),
+                    "home_rank": hr[0] if hr else None, "home_src": hr[1] if hr else "",
+                    "away_rank": ar[0] if ar else None, "away_src": ar[1] if ar else "",
                     "labels": _match_labels(probs, ui["index"], home, neutral)})
     return out
 
@@ -647,7 +649,8 @@ def _home_card_html(r: dict) -> str:
         f'<span>{flag_emoji(r["home_team"])} {zh(r["home_team"])}</span>'
         f'<span>{zh(r["away_team"])} {flag_emoji(r["away_team"])}</span></div>'
         '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--wc-muted);">'
-        f'<span>世界第 {r.get("home_rank") or "—"}</span><span>世界第 {r.get("away_rank") or "—"}</span></div>'
+        f'<span>{r.get("home_src") or "世界"} #{r.get("home_rank") or "—"}</span>'
+        f'<span>{r.get("away_src") or "世界"} #{r.get("away_rank") or "—"}</span></div>'
         f'{result_line}{bar}'
         '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--wc-muted);">'
         f'<span>胜 {ph:.0%}</span><span>平 {pd:.0%}</span><span>负 {pa:.0%}</span></div>'
@@ -705,7 +708,7 @@ def render_home(model) -> None:
     for i, r in enumerate(shown):
         with cols[i % 2]:
             st.markdown(_home_card_html(r), unsafe_allow_html=True)
-    st.caption("说明：国旗 + 世界排名（模型 Elo，非 FIFA 官方）；已完赛显示比分并排到列表下方；"
+    st.caption("说明：国旗 + 世界排名（FIFA 官方，缺失回退模型 Elo）；已完赛显示比分并排到列表下方；"
                "价值 / 让球 / 身价 / 伤停类标签需拉取实时赔率或外部数据，未在首页批量计算。"
                "单场详情页可查看完整价值判断与爆冷因子。")
 
@@ -718,15 +721,15 @@ def render_schedule(model) -> None:
     if not fixtures:
         st.warning("暂无赛程数据（需先刷新 2026 赛程）。")
         return
-    rank_map = rk.elo_rank_map(model)
+    rank_map = rk.world_rank_map(model)
     groups = sorted({f["group_name"] for f in fixtures if f.get("group_name")})
     fg = st.selectbox("分组", ["全部"] + groups, key="sched_group")
     flist = [f for f in fixtures if fg == "全部" or f.get("group_name") == fg]
     flist = sch.sort_fixtures(flist, datetime.now(timezone.utc))
 
     def _cell(t):
-        r = rank_map.get(t)
-        return f"{flag_emoji(t)} {zh(t)}（#{r}）" if r else f"{flag_emoji(t)} {zh(t)}"
+        rs = rank_map.get(t)
+        return f"{flag_emoji(t)} {zh(t)}（{rs[1]} #{rs[0]}）" if rs and rs[0] else f"{flag_emoji(t)} {zh(t)}"
 
     rows = []
     for f in flist:
@@ -742,7 +745,8 @@ def render_schedule(model) -> None:
         })
     st.caption(f"共 {len(rows)} 场（未开赛在前、已结束在后；时间为北京时间 UTC+8）。")
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-    st.caption("世界排名为模型 Elo 排名（非 FIFA 官方）；比分在赛程数据更新后自动显示。")
+    st.caption(f"世界排名：FIFA 官方{('（' + (rk.ranking_date() or '') + '）') if rk.ranking_date() else ''}，"
+               "缺失回退模型 Elo；比分在赛程数据更新后自动显示。")
 
 
 inject_design_system()
@@ -847,10 +851,13 @@ section_title(f"{zh(home)} vs {zh(away)}")
 if venue_info:
     st.caption(venue_info)
 from wc2026.analysis import ranking as _ranking
-_hr, _rtot = _ranking.elo_rank(model, home)
-_ar, _ = _ranking.elo_rank(model, away)
-st.caption(f"🌐 世界排名（模型 Elo，非 FIFA 官方）：{zh(home)} 第 {_hr or '—'} 名 · "
-           f"{zh(away)} 第 {_ar or '—'} 名（共 {_rtot} 队）")
+_hr, _hsrc = _ranking.world_rank(model, home)
+_ar, _asrc = _ranking.world_rank(model, away)
+_rdate = _ranking.ranking_date()
+_rtot = 211  # FIFA 榜规模（用于上下文展示）
+st.caption(f"🌐 世界排名：{zh(home)} 第 {_hr or '—'} 名（{_hsrc or '—'}） · "
+           f"{zh(away)} 第 {_ar or '—'} 名（{_asrc or '—'}）"
+           f"　来源：FIFA 官方{('（' + _rdate + '）') if _rdate else ''}，缺失回退模型 Elo")
 
 if selected_fixture is not None:
     from wc2026.analysis import schedule as _sch2
