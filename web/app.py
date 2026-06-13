@@ -26,6 +26,9 @@ from wc2026.models.predictor import DC_PATH, ELO_PATH, get_model, train_and_save
 st.set_page_config(page_title="2026 世界杯预测", page_icon="⚽", layout="wide")
 HOSTS = {"Mexico", "Canada", "United States"}
 
+# 登录开关：暂时关闭用户登录（登录/用户管理代码全部保留，置 True 即恢复登录墙）。
+LOGIN_ENABLED = False
+
 
 def current_theme() -> str:
     """返回当前 Streamlit 主题类型（'light'/'dark'），用于让自定义样式自适应。"""
@@ -222,6 +225,8 @@ def section_title(text: str) -> None:
 
 
 def require_login() -> dict:
+    if not LOGIN_ENABLED:
+        return {"username": "guest", "role": "user"}  # 登录已关闭：直接放行为访客
     if st.session_state.get("auth_user"):
         return {"username": st.session_state["auth_user"], "role": st.session_state.get("auth_role", "user")}
     st.markdown(
@@ -248,6 +253,8 @@ def require_login() -> dict:
 
 
 def render_admin_user_panel() -> None:
+    if not LOGIN_ENABLED:
+        return  # 登录已关闭：不显示账号/退出/建用户面板（代码保留）
     st.divider()
     st.caption(f"当前用户：{st.session_state.get('auth_user')}")
     if st.button("退出登录"):
