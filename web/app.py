@@ -1221,7 +1221,7 @@ with st.expander("📥 分享海报（生成 PNG）", expanded=False):
         from wc2026.viz.poster import match_poster_png
         _png = match_poster_png(zh(home), zh(away), x, upset=ui, home_rank=_hr, away_rank=_ar,
                                 result=_rtxt, subtitle=(venue_info or "").replace("🗓 ", ""))
-        st.image(_png, caption="预览", width="stretch")
+        st.image(_png, caption="预览", width=680)
         st.download_button("📥 下载海报 PNG", _png, file_name=f"{home}_vs_{away}.png", mime="image/png")
         st.caption("无 CJK 字体的服务器上会自动改用英文队名。模型概率仅供参考。")
     except Exception as exc:
