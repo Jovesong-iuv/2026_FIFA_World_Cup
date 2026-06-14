@@ -74,10 +74,24 @@ def build_context(d: dict) -> str:
         L.append("阵容身价：" + d["squad_value"])
     if d.get("tactics"):
         L.append("战术研判：" + d["tactics"])
+    if d.get("fatigue"):
+        L.append("体能与旅行：" + d["fatigue"])
     if d.get("news_titles"):
         L.append("相关新闻标题：" + "；".join(d["news_titles"][:8]))
     if d.get("extra_text"):
         L.append("用户补充材料：" + d["extra_text"])
+    return "\n".join(L)
+
+
+def build_parlay_context(legs: list[dict], summary: dict) -> str:
+    """串关上下文：各关 + 组合概率/赔率/价值。"""
+    L = ["这是一个串关（多场组合）。请基于以下各关与组合信息回答。"]
+    L.append(f"共 {len(legs)} 关；串关总概率 {summary.get('combined_prob', 0):.2%}、"
+             f"总赔率 {summary.get('combined_odds', 0):.2f}、模型期望价值 {summary.get('edge', 0):+.1%}。")
+    for i, lg in enumerate(legs, 1):
+        L.append(f"第{i}关：{lg.get('match')} · {lg.get('market', '')} · {lg.get('label')}"
+                 f"（模型概率 {lg.get('model_prob', 0):.0%}，赔率 {lg.get('odds', 0):.2f}）")
+    L.append("注意：串关假设各关独立，关数越多命中率指数下降，组合概率是乐观上限；仅供参考、非投注建议。")
     return "\n".join(L)
 
 

@@ -328,6 +328,80 @@ def render_access_log() -> None:
         st.rerun()
 
 
+def render_bet_log() -> None:
+    """所有者：投注台账（记注 + 结算 + ROI / 盈亏曲线 / 回撤）。"""
+    from wc2026.data import bets as bet_db
+    section_title("投注台账（所有者）")
+    st.caption("记录你实际下的注，结算后自动算 ROI、命中率、盈亏曲线、最大回撤。仅本地数据库，仅供复盘。")
+    with st.form("add_bet_form", clear_on_submit=True):
+        a1, a2, a3 = st.columns(3)
+        bm = a1.text_input("场次", placeholder="墨西哥 vs 南非")
+        bmk = a2.text_input("市场", placeholder="胜平负 / 大小球 / 让球…")
+        bsel = a3.text_input("选择", placeholder="主胜 / 大 2.5 / 主-0.5…")
+        a4, a5, a6 = st.columns(3)
+        bodds = a4.number_input("赔率", min_value=1.01, value=2.00, step=0.01)
+        bstake = a5.number_input("本金", min_value=0.0, value=100.0, step=10.0)
+        bnote = a6.text_input("备注")
+        if st.form_submit_button("➕ 记一注") and bm.strip():
+            bet_db.add_bet(bm.strip(), bmk.strip(), bsel.strip(), bodds, bstake, bnote.strip())
+            st.success("已记录")
+            st.rerun()
+
+    rows = bet_db.list_bets()
+    if not rows:
+        st.caption("还没有投注记录。")
+        return
+    s = bet_db.summary(rows)
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("总盈亏", f"{s['profit']:+.2f}")
+    m2.metric("ROI（已结算）", f"{s['roi']:+.1%}")
+    m3.metric("命中率", f"{s['win_rate']:.0%}", f"{s['wins']} 胜", delta_color="off")
+    m4.metric("最大回撤", f"{s['max_drawdown']:.2f}")
+    st.caption(f"已结算 {s['settled']} 注 · 待结 {s['pending']} 注（待结本金 {s['pending_stake']:.0f}）· "
+               f"已投本金 {s['staked']:.0f} · 回收 {s['returned']:.0f}")
+    if s.get("clv_count"):
+        st.caption(f"📈 收盘线价值(CLV，{s['clv_count']} 注有收盘赔率)：击败收盘 {s['beat_close_rate']:.0%} · "
+                   f"平均 CLV {s['avg_clv']:+.1%}。长期看 CLV>0 比短期盈亏更能说明你下注有价值。")
+    if s["curve"]:
+        cfig = go.Figure(go.Scatter(y=s["curve"], mode="lines+markers", name="累计盈亏"))
+        cfig.update_layout(height=260, margin=dict(l=10, r=10, t=10, b=10), yaxis_title="累计盈亏",
+                           template="plotly_dark" if current_theme() == "dark" else "plotly_white",
+                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(cfig, width="stretch")
+
+    df = pd.DataFrame([{
+        "id": r["id"], "时间": (r["created_at"] or "")[5:16], "场次": r["match"],
+        "市场": r["market"], "选择": r["selection"], "赔率": r["odds"], "本金": r["stake"],
+        "状态": r["status"], "盈亏": round(bet_db.pnl_of(r), 2), "收盘赔率": r.get("close_odds"),
+        "备注": r["note"] or "",
+    } for r in rows])
+    edited = st.data_editor(
+        df, hide_index=True, width="stretch", key="bets_editor",
+        column_config={
+            "状态": st.column_config.SelectboxColumn("状态", options=list(bet_db.STATUSES)),
+            "收盘赔率": st.column_config.NumberColumn("收盘赔率", min_value=1.01, step=0.01, format="%.2f"),
+            **{c: st.column_config.Column(disabled=True)
+               for c in ["id", "时间", "场次", "市场", "选择", "赔率", "本金", "盈亏", "备注"]},
+        })
+    cc1, cc2 = st.columns([1, 2])
+    if cc1.button("💾 保存结算 / 收盘赔率"):
+        before = {r["id"]: (r["status"], r.get("close_odds")) for r in rows}
+        changed = 0
+        for _, row in edited.iterrows():
+            st0, co0 = before.get(row["id"], (None, None))
+            if st0 != row["状态"]:
+                bet_db.set_status(int(row["id"]), row["状态"]); changed += 1
+            co_new = row["收盘赔率"] if row["收盘赔率"] and float(row["收盘赔率"]) > 1.0 else None
+            if (co0 or None) != co_new:
+                bet_db.set_close(int(row["id"]), co_new); changed += 1
+        st.success(f"已更新 {changed} 项。")
+        st.rerun()
+    del_id = cc2.selectbox("删除某注", ["（不删）"] + [r["id"] for r in rows], key="del_bet")
+    if del_id != "（不删）" and cc2.button("🗑 删除所选"):
+        bet_db.delete_bet(int(del_id))
+        st.rerun()
+
+
 def render_admin_user_panel() -> None:
     if not LOGIN_ENABLED:
         return  # 登录已关闭：不显示账号/退出/建用户面板（代码保留）
@@ -392,7 +466,18 @@ def load_fixtures():
             "location, home_score, away_score "
             "FROM fixtures WHERE predictable=1 ORDER BY date_utc"
         ).fetchall()
-    return [dict(r) for r in rows]
+    fixtures = [dict(r) for r in rows]
+    # 叠加已提交的赛果（部署服务器 DB 可能无比分时仍能显示）
+    try:
+        from wc2026.data.results import load_results_overlay
+        overlay = load_results_overlay()
+        if overlay:
+            for f in fixtures:
+                if f.get("home_score") is None and f["match_number"] in overlay:
+                    f["home_score"], f["away_score"] = overlay[f["match_number"]]
+    except Exception:
+        pass
+    return fixtures
 
 
 def llm_configured():
@@ -456,7 +541,33 @@ def render_parlay_builder() -> None:
         default=["胜平负", "半全场胜平负", "让球", "大小球", "进球个数", "比分"],
     )
     legs = []
+    rec_legs = []
     if selected_idx:
+        section_title("🎯 概率最高串关推荐")
+        rec_detail = []
+        for idx in selected_idx:
+            match = flist[idx]
+            cands = [c for c in value_candidates_for_match(match, neutral=match["home_team"] not in HOSTS)
+                     if c["market"] in parlay_markets]
+            if not cands:
+                continue
+            cands.sort(key=lambda c: c["model_prob"], reverse=True)
+            mm = f"{zh(match['home_team'])} vs {zh(match['away_team'])}"
+            best = cands[0]
+            rec_legs.append({"match": mm, "market": best["market"], "label": best["label"],
+                             "model_prob": best["model_prob"], "odds": best["odds"]})
+            for rk, c in enumerate(cands[:3], 1):
+                rec_detail.append({"场次": mm, "排序": rk, "市场": c["market"], "选项": c["label"],
+                                   "模型概率": f"{c['model_prob']:.1%}", "公平赔率": f"{c['odds']:.2f}"})
+        if rec_legs:
+            rec_sum = value.parlay_summary(rec_legs, stake)
+            r1, r2, r3 = st.columns(3)
+            r1.metric("稳胆串关总概率", f"{rec_sum['combined_prob']:.2%}")
+            r2.metric("总赔率", f"{rec_sum['combined_odds']:.2f}")
+            r3.metric("关数", len(rec_legs))
+            st.caption("「稳胆」推荐：每场取模型概率最高的选项串一起（命中率最高、赔率最低）。"
+                       "下表为各场前 3 选项(按模型概率排序)，想换更高赔率/价值在下方「逐场参数选择」里自行勾选。")
+            st.dataframe(pd.DataFrame(rec_detail), hide_index=True, width="stretch")
         section_title("逐场参数选择")
     for pos, idx in enumerate(selected_idx, start=1):
         match = flist[idx]
@@ -521,11 +632,14 @@ def render_parlay_builder() -> None:
             "model_prob": chosen["model_prob"],
             "odds": odds_input,
         })
-    summary = value.parlay_summary(legs, stake)
+    eff_legs = legs if legs else rec_legs
+    summary = value.parlay_summary(eff_legs, stake)
     if not summary["legs"]:
-        st.info("请选择至少一场比赛，并在每场表格中勾选一个参数。")
+        st.info("请选择至少一场比赛（勾选具体参数则按你的选择，否则默认分析上方「概率最高推荐」组合）。")
         return
     st.divider()
+    if not legs and rec_legs:
+        st.caption("ℹ️ 你未手动勾选，以下按「概率最高推荐」组合分析；可在上方逐场勾选自定义。")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("串关总概率", f"{summary['combined_prob']:.2%}")
     m2.metric("串关总赔率", f"{summary['combined_odds']:.2f}")
@@ -539,7 +653,45 @@ def render_parlay_builder() -> None:
         "赔率": f"{r['odds']:.2f}",
         "单关价值": f"{r['edge']:+.1%}",
     } for r in summary["legs"]]), hide_index=True, width="stretch")
-    st.caption("串关假设各场结果近似独立；关数越多，命中率会快速下降。仅供概率辅助，不代表盈利保证。")
+    n_legs = len(summary["legs"])
+    _matches = [r["match"] for r in summary["legs"]]
+    if len(_matches) != len(set(_matches)):
+        st.error("⚠️ 同一场比赛被串了多个选项：同场结果高度相关，「总概率＝各关相乘」会严重高估真实命中率，"
+                 "建议每场只保留一项。")
+    if n_legs >= 4:
+        st.warning(f"🚩 高风险串关：共 {n_legs} 关，每关都要命中。命中率随关数指数下降，建议控制在 2–3 关。")
+    st.caption("串关假设各场结果近似独立；实际模型有误差、结果也可能相关，"
+               "「总概率（相乘）」是乐观上限，真实命中率通常更低、关数越多衰减越快。仅供参考，不代表盈利保证。")
+
+    st.divider()
+    section_title("🤖 串关 AI 问答")
+    if not llm_configured():
+        st.caption("需接入 LLM（.env 配置 LLM_API_KEY）后可用。")
+    elif not is_owner():
+        st.caption("🔒 AI 问答仅所有者可用（消耗 LLM token）；访客只读。")
+    else:
+        from wc2026.llm import match_chat
+        pctx = match_chat.build_parlay_context(summary["legs"], summary)
+        pkey = "parlaychat"
+        phist = st.session_state.setdefault(pkey, [])
+        for mmsg in phist:
+            st.markdown(f"**{'🧑 你' if mmsg['role'] == 'user' else '🤖 AI'}：** {mmsg['content']}")
+        pq = st.text_area("问串关相关问题（如：这串风险在哪？该减到几关？哪关最可能爆？换哪个选项更稳？）",
+                          key="parlay_q", height=80)
+        pcc1, pcc2 = st.columns([1, 1])
+        if pcc1.button("发送", key="parlay_send") and pq.strip():
+            phist.append({"role": "user", "content": pq.strip()})
+            with st.spinner("AI 分析串关中…"):
+                pans = match_chat.ask(pq.strip(), pctx, phist)
+            phist.append({"role": "assistant", "content": pans["text"]})
+            st.rerun()
+        if pcc2.button("清空对话", key="parlay_clear"):
+            st.session_state[pkey] = []
+            st.rerun()
+        if st.checkbox("查看 AI 看到的串关上下文", key="parlay_ctx"):
+            st.code(pctx)
+        st.caption("AI 依据模型概率与你当前所串的各关作答；如需实时赔率价值，请先在「💰 价值扫描」拉取赔率(所有者)再来问。"
+                   "AI 不会自动联网/拉取，避免消耗配额与 token。")
 
 
 def load_news(home, away):
@@ -626,6 +778,61 @@ def render_group_stage(model) -> None:
     st.caption("⚽ 小组出线概率会随每轮赛果快速变化；末轮尤其注意战意差异：已出线可能轮换、已淘汰战意下降、"
                "积分相近可能更保守。排序近似 积分>净胜球>进球数，未完全实现相互战绩等次级规则；"
                "未显示 FIFA 排名（项目暂无该数据源）。")
+
+    st.markdown("---")
+    section_title("🏆 整届夺冠 / 进决赛概率")
+    from wc2026.analysis import tournament as _tour
+    from wc2026.analysis import ranking as _rk
+    from wc2026.data.flags import flag_emoji as _flag
+    tkey = f"toursim:{n_sims}:{hash(sig)}"
+    if st.button("🎲 重新模拟整届", key="run_tour") or tkey not in st.session_state:
+        with st.spinner(f"整届蒙特卡洛（小组→决赛）{n_sims:,} 次…"):
+            st.session_state[tkey] = _tour.simulate_tournament(model, gd, n_sims=n_sims)
+    tour_res = st.session_state[tkey]
+    rmap = _rk.world_rank_map(model)
+
+    def _tcell(t):
+        rs = rmap.get(t)
+        return f"{_flag(t)} {zh(t)}" + (f"（{rs[1]} #{rs[0]}）" if rs and rs[0] else "")
+
+    trows = sorted(tour_res.items(), key=lambda kv: kv[1]["champion"], reverse=True)
+    st.dataframe(pd.DataFrame([{
+        "球队": _tcell(t), "进16强": f"{r['r16']:.0%}", "进8强": f"{r['qf']:.0%}",
+        "进4强": f"{r['sf']:.0%}", "进决赛": f"{r['final']:.1%}", "夺冠": f"{r['champion']:.1%}",
+    } for t, r in trows]), hide_index=True, width="stretch")
+    st.caption("整届模拟：小组 → 淘汰赛（32 强→决赛）。近似：淘汰赛对阵按标准顺序树；8 个最佳小组第三按 slot 资格匹配；"
+               "平局按加时/点球以强弱近似决出。概率随赛果更新；仅供参考。")
+
+    st.markdown("---")
+    section_title("🗺 淘汰赛对阵（32 强 · 小组投影）")
+
+    def _slot_proj(slot: str) -> str:
+        g = slot[1] if len(slot) == 2 and slot[0] in "12" else None
+        if slot.startswith("3"):
+            return f"{'/'.join(list(slot[1:]))} 组第三"
+        rws = res.get(f"Group {g}", [])
+        if not rws:
+            return slot
+        if slot.startswith("1"):
+            b = max(rws, key=lambda r: r["first"])
+            return f"{zh(b['team'])}（{b['first']:.0%} 头名）"
+        b = max(rws, key=lambda r: r["top2"] - r["first"])
+        return f"{zh(b['team'])}（次名）"
+
+    from wc2026.analysis.tournament import R32_SLOTS
+    bcols = st.columns(2)
+    for half, col in enumerate(bcols):
+        with col:
+            st.caption("上半区" if half == 0 else "下半区")
+            for mn, (hs, as_) in enumerate(R32_SLOTS[half * 8:half * 8 + 8], start=73 + half * 8):
+                st.markdown(
+                    f'<div style="border:1px solid var(--wc-line);border-radius:8px;padding:8px 10px;'
+                    f'margin-bottom:6px;background:var(--wc-surface);font-size:13px;">'
+                    f'<span style="color:var(--wc-muted);">M{mn} · {hs} vs {as_}</span><br>'
+                    f'<b>{_slot_proj(hs)}</b> <span style="color:var(--wc-muted);">vs</span> <b>{_slot_proj(as_)}</b>'
+                    f'</div>', unsafe_allow_html=True)
+    st.caption("对阵 slot 来自官方赛程（1A=A 组头名、2B=B 组次名、3XXXX=列出小组中的最佳第三）；"
+               "投影球队为当前小组模拟的最可能占位，随赛果变化。R16 之后由 32 强结果决定，晋级概率见上方夺冠表。")
 
 
 def _group_short(group: str) -> str:
@@ -824,6 +1031,7 @@ with st.sidebar:
     page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "串关组合"]
     if is_owner():
         page_options.append("访问记录")
+        page_options.append("投注台账")
     if user["role"] == "admin":
         page_options.append("用户管理")
     page = st.radio("页面", page_options, horizontal=True)
@@ -838,6 +1046,9 @@ if page == "首页":
     st.stop()
 if page == "访问记录":
     render_access_log()
+    st.stop()
+if page == "投注台账":
+    render_bet_log()
     st.stop()
 if page == "小组赛赛程":
     render_schedule(model)
@@ -893,17 +1104,20 @@ with st.sidebar:
                             help="末轮出线已定可能消极比赛/算计排名：下调进球并提示爆冷风险")
                  if use_context else False)
     st.divider()
-    if action_button("🔄 一键全量刷新", help="重抓历史数据+重训模型+更新赛程"):
-        with st.spinner("抓数据 + 重训 + 赛程中…"):
+    if action_button("🔄 一键全量刷新", help="重抓历史数据+回填赛果+重训模型+更新赛程"):
+        with st.spinner("抓数据 + 回填赛果 + 重训 + 赛程中…"):
             ingest_international_results()
-            train_and_save()
             try:
                 fetch_and_store_fixtures()
             except Exception as exc:
                 st.warning(f"赛程刷新失败：{exc}")
+            from wc2026.data.results import backfill_fixture_scores, export_results_json
+            backfill_fixture_scores()
+            export_results_json()
+            train_and_save()
             st.cache_resource.clear()
             st.cache_data.clear()
-        st.success("已刷新")
+        st.success("已刷新（含赛果回填）")
         st.rerun()
     st.divider()
     st.caption("LLM 理由/分析：" + ("✅ 已配置，可手动触发" if llm_configured() else "⚠️ 规则模板(未接入)"))
@@ -997,6 +1211,22 @@ with uc2:
 st.caption("爆冷指数衡量「把热门方当稳胆」的风险，不预测弱队一定爆冷；指数越高，越不适合作为无脑稳胆。"
            "暂未纳入伤停 / 海拔 / 时差 / 历史大赛不稳定性（项目无对应结构化数据源）。")
 
+with st.expander("📥 分享海报（生成 PNG）", expanded=False):
+    from wc2026.analysis import schedule as _sch_p
+    _rtxt = None
+    if selected_fixture is not None:
+        _rp = _sch_p.match_result(selected_fixture.get("home_score"), selected_fixture.get("away_score"))
+        _rtxt = _rp["score"].replace("-", " - ") if _rp["finished"] else None
+    try:
+        from wc2026.viz.poster import match_poster_png
+        _png = match_poster_png(zh(home), zh(away), x, upset=ui, home_rank=_hr, away_rank=_ar,
+                                result=_rtxt, subtitle=(venue_info or "").replace("🗓 ", ""))
+        st.image(_png, caption="预览", width="stretch")
+        st.download_button("📥 下载海报 PNG", _png, file_name=f"{home}_vs_{away}.png", mime="image/png")
+        st.caption("无 CJK 字体的服务器上会自动改用英文队名。模型概率仅供参考。")
+    except Exception as exc:
+        st.caption(f"海报生成失败：{exc}")
+
 section_title("赛前环境与背景适应性")
 env_score = env_report["score_pick"]
 ec1, ec2 = st.columns([1, 3])
@@ -1005,6 +1235,21 @@ with ec1:
     st.caption(env_score["basis"])
 with ec2:
     st.dataframe(pd.DataFrame(env_report["environment"]), hide_index=True, width="stretch")
+
+from wc2026.analysis import fatigue as _fatigue
+_mf = _fatigue.match_fatigue(home, away, fixtures, selected_fixture)
+if _mf["home"] and _mf["away"]:
+    st.markdown("**🏃 体能与旅行（按赛程量化）**")
+    st.dataframe(pd.DataFrame([
+        {"球队": zh(t),
+         "休息天数": (d["rest_days"] if d["rest_days"] is not None else "首战"),
+         "上场后旅行(km)": (d["travel_km"] or "—"),
+         "本场海拔(m)": (d["alt"] if d["alt"] is not None else "—")}
+        for t, d in [(home, _mf["home"]), (away, _mf["away"])]
+    ]), hide_index=True, width="stretch")
+    for _n in _mf["notes"]:
+        st.markdown(f"- {_n}")
+    st.caption("休息天数/旅行公里按赛程与场馆经纬度计算；海拔为承办城市公开数据。方向性体能提示，不改写概率。")
 
 ad1, ad2 = st.columns([1, 1])
 with ad1:
@@ -1101,6 +1346,24 @@ st.caption("策略：放弃 1-3 球高风险区间（易遇 0-0 / 强队零封�
            "盘口 / 水位类条件需结合真实赔率确认。风险控制：单场投注≤10% 资金，连黑 3 场停手，"
            "不碰冷门联赛与高水盘。模型有误差，仅供参考。")
 
+with st.expander("🎲 比分蒙特卡洛（验证单场结论的自洽性）", expanded=False):
+    from wc2026.markets import simulate as _sim
+    _ns = st.select_slider("模拟次数", [2000, 10000, 50000], value=10000, key=f"simn:{home}:{away}")
+    sm = _sim.simulate_match(mat, n_sims=int(_ns), top_k=8)
+    st.caption(f"从本场比分概率矩阵抽样 {sm['n']:,} 次，统计最高频比分，与解析「模型概率」并排对比。"
+               "二者吻合即说明单场分析里的比分/胜平负/大小球推导自洽（抽样的是同一模型，非独立预测）。")
+    st.dataframe(pd.DataFrame([{
+        "比分(主-客)": r["score"], "模拟频率": f"{r['sim_prob']:.1%}", "模型概率": f"{r['model_prob']:.1%}",
+        "差": f"{(r['sim_prob'] - r['model_prob']):+.1%}",
+    } for r in sm["top_scores"]]), hide_index=True, width="stretch")
+    vc1, vc2 = st.columns(2)
+    vc1.markdown(f"**胜平负**　模拟 {sm['sim_1x2']['home']:.0%}/{sm['sim_1x2']['draw']:.0%}/{sm['sim_1x2']['away']:.0%}　"
+                 f"模型 {sm['model_1x2']['home']:.0%}/{sm['model_1x2']['draw']:.0%}/{sm['model_1x2']['away']:.0%}")
+    vc2.markdown(f"**大/小 2.5**　模拟 {sm['sim_ou25']['over']:.0%}/{sm['sim_ou25']['under']:.0%}　"
+                 f"模型 {sm['model_ou25']['over']:.0%}/{sm['model_ou25']['under']:.0%}")
+    st.caption(f"模拟期望进球 {sm['exp_goals_sim'][0]:.2f} : {sm['exp_goals_sim'][1]:.2f}；"
+               f"胜平负模拟-模型最大偏差 {sm['max_abs_err']:.1%}（次数越多越小，正常应 <2%）。")
+
 with st.expander("💰 价值 & 凯利（输入体彩/盘口赔率）", expanded=False):
     st.caption("输入该场实际赔率(十进制/欧赔)，对比模型概率找价值盘。默认填的是模型公平赔率。")
     vc1, vc2, vc3 = st.columns(3)
@@ -1164,6 +1427,31 @@ with st.expander("💰 价值 & 凯利（输入体彩/盘口赔率）", expanded
         })
     st.dataframe(pd.DataFrame(vrows), hide_index=True, width="stretch")
     st.caption("⚠️ 价值>0 才有长期正期望；凯利为占本金比例，默认参考 ¼ 凯利(避免激进)。模型有误差，仅供参考、量力而行。")
+
+    _picks = {k: r for k, r in analysis["results"].items() if r and r["edge"] > 0}
+    st.markdown("**🎲 凯利风险模拟**（把「连黑停手」量化成破产概率）")
+    if _picks:
+        from wc2026.markets import risk as _risk
+        _best = max(_picks, key=lambda k: _picks[k]["edge"])
+        rc1, rc2, rc3 = st.columns(3)
+        _opt = rc1.selectbox("价值选项", list(_picks.keys()), index=list(_picks).index(_best),
+                             format_func=lambda k: labels[k], key=f"risk_pick:{home}:{away}")
+        _kf = rc2.select_slider("凯利比例", ["1/8", "1/4", "1/2", "全凯利"], value="1/4",
+                                key=f"risk_kf:{home}:{away}")
+        _nb = rc3.select_slider("下注场次", [20, 50, 100, 200], value=50, key=f"risk_nb:{home}:{away}")
+        _mult = {"1/8": 0.125, "1/4": 0.25, "1/2": 0.5, "全凯利": 1.0}[_kf]
+        _pr = _picks[_opt]
+        _f = _pr["kelly_full"] * _mult
+        sim = _risk.bankroll_sim(_pr["model_prob"], _pr["odds"], _f, n_bets=int(_nb))
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric("盈利概率", f"{sim['p_profit']:.0%}")
+        s2.metric("资金中位增长", f"{sim['median_final'] - 1:+.0%}")
+        s3.metric("回撤>20% 概率", f"{sim['p_drawdown_20']:.0%}")
+        s4.metric("破产概率(跌破50%)", f"{sim['risk_of_ruin']:.0%}")
+        st.caption(f"按「{labels[_opt]}」边际 {_pr['edge']:+.1%}、{_kf}(占本金 {_f:.1%})、连下 {_nb} 场，模拟 5000 次。"
+                   "破产/回撤概率高=该比例过激进，应降比例或减少场次；若模型高估边际，真实结果会更差。")
+    else:
+        st.caption("当前无正期望选项，不做风险模拟（无价值则不下注）。")
 
     temp = value.market_temperature(x, imp["fair"])
     st.markdown("**市场冷热**（剔水后市场概率 vs 模型概率）")
@@ -1497,6 +1785,9 @@ with st.expander("🤖 AI 对话（结合本场全部已加载数据问答 / 粘
                                       sq_home.get("formation") if sq_home else None,
                                       sq_away.get("formation") if sq_away else None)
             _tact = "；".join(_tr2["notes"])
+        from wc2026.analysis import fatigue as _fat_mod
+        _fat_r = _fat_mod.match_fatigue(home, away, fixtures, selected_fixture)
+        _fat = "；".join(_fat_r["notes"]) if _fat_r.get("notes") else None
         ev = reason["evidence"]
         ctx = match_chat.build_context({
             "home": zh(home), "away": zh(away),
@@ -1508,7 +1799,7 @@ with st.expander("🤖 AI 对话（结合本场全部已加载数据问答 / 粘
             "correct_score_top": markets["correct_score_top"],
             "upset": ui, "strength": sp, "goal_rec": gs,
             "h2h": ev["h2h"], "home_form": ev["home_form"], "away_form": ev["away_form"],
-            "squad_value": _sv, "news_titles": _news_titles, "tactics": _tact,
+            "squad_value": _sv, "news_titles": _news_titles, "tactics": _tact, "fatigue": _fat,
         })
         chat_key = f"matchchat:{home}:{away}"
         history = st.session_state.setdefault(chat_key, [])
@@ -1577,12 +1868,37 @@ with st.expander("📈 模型回测（历届世界杯校准验证）", expanded=
     st.caption("样本外：用开赛前数据训练、预测该届。每届需训练约 10 秒。")
     if action_button("▶️ 运行回测（2014 / 2018 / 2022）"):
         from wc2026.backtest.runner import backtest_ensemble
-        rows = []
+        rows, results = [], []
         with st.spinner("训练并回测中…"):
             for y in ["2014", "2018", "2022"]:
                 r = backtest_ensemble(y)
+                results.append(r)
                 rows.append({"届": y, "场次": r["n"], "LogLoss": f"{r['log_loss']:.4f}",
                              "基准": f"{r['baseline_log_loss']:.4f}", "Brier": f"{r['brier']:.3f}",
                              "准确率": f"{r['accuracy']:.1%}"})
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-        st.caption("LogLoss < 1.0986 = 比瞎猜有预测力。2022 是史上最大冷门届，模型会失灵——真实局限，不粉饰。")
+        st.caption("LogLoss < 1.0986 = 比瞎猜有预测力；Brier 越低越好。2022 是史上最大冷门届，模型会失灵——真实局限，不粉饰。")
+
+        agg = {}
+        for r in results:
+            for b in r.get("calibration", []):
+                a = agg.setdefault(b["range"], {"n": 0, "ps": 0.0, "af": 0.0})
+                a["n"] += b["n"]; a["ps"] += b["pred_mean"] * b["n"]; a["af"] += b["actual_freq"] * b["n"]
+        if agg:
+            cal = [{"预测概率区间": k, "平均预测": round(v["ps"] / v["n"], 3),
+                    "实际频率": round(v["af"] / v["n"], 3), "样本": v["n"]}
+                   for k, v in sorted(agg.items())]
+            st.markdown("**校准曲线（预测概率 vs 实际发生频率，越贴近对角线越准）**")
+            cfig = go.Figure()
+            cfig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="完美校准",
+                                      line=dict(dash="dash", color="#9aa7b6")))
+            cfig.add_trace(go.Scatter(x=[c["平均预测"] for c in cal], y=[c["实际频率"] for c in cal],
+                                      mode="lines+markers", name="模型(三届合并)"))
+            cfig.update_layout(height=300, xaxis_title="平均预测概率", yaxis_title="实际频率",
+                               xaxis_range=[0, 1], yaxis_range=[0, 1], margin=dict(l=10, r=10, t=10, b=10),
+                               template="plotly_dark" if current_theme() == "dark" else "plotly_white",
+                               paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(cfig, width="stretch")
+            st.dataframe(pd.DataFrame(cal), hide_index=True, width="stretch")
+            st.caption("⚠️ 校准是「价值」可信的前提：若预测 60% 实际只兑现 45%，说明模型高估，据此算出的「价值」多半是假 edge。"
+                       "高关注度场次市场更有效，建议在「价值扫描」里把模型权重调低（更信市场，推荐 0.4–0.6）。")

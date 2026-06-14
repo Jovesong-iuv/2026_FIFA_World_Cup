@@ -1,6 +1,6 @@
 import unittest
 
-from wc2026.llm.match_chat import build_context
+from wc2026.llm.match_chat import build_context, build_parlay_context
 
 
 class BuildContextTest(unittest.TestCase):
@@ -45,6 +45,17 @@ class BuildContextTest(unittest.TestCase):
     def test_extra_text_included(self):
         ctx = build_context({"home": "A", "away": "B", "extra_text": "球队大巴晚点"})
         self.assertIn("用户补充材料：球队大巴晚点", ctx)
+
+
+class ParlayContextTest(unittest.TestCase):
+    def test_build_parlay_context(self):
+        legs = [{"match": "A vs B", "market": "胜平负", "label": "主胜", "model_prob": 0.62, "odds": 1.6},
+                {"match": "C vs D", "market": "大小球", "label": "大2.5", "model_prob": 0.55, "odds": 1.9}]
+        ctx = build_parlay_context(legs, {"combined_prob": 0.34, "combined_odds": 3.04, "edge": 0.03})
+        self.assertIn("共 2 关", ctx)
+        self.assertIn("第1关：A vs B", ctx)
+        self.assertIn("第2关：C vs D", ctx)
+        self.assertIn("34.00%", ctx)
 
 
 if __name__ == "__main__":

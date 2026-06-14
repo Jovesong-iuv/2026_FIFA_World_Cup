@@ -1,0 +1,40 @@
+name: Refresh data & model
+
+# 每天定时刷新：抓最新国际赛结果 → 回填赛果 → 重训模型 → 提交模型/赛果文件。
+# 让部署的服务器（git pull / 重新部署后）拿到最新模型与比分，避免停在旧时间。
+#
+# ⚠️ 该工作流会用 GITHUB_TOKEN 自动 commit & push（dc_model.json / elo_model.json / wc_results.json）。
+#    首次启用前请确认：仓库 Settings → Actions → Workflow permissions 允许 "Read and write"。
+#    若只想手动触发，删除下面 schedule 段即可。
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # 每天 UTC 06:17（错开整点）
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Refresh (ingest + backfill + retrain)
+        run: python scripts/refresh_all.py
+      - name: Commit updated model & results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/dc_model.json data/elo_model.json data/wc_results.json
+          git diff --staged --quiet || git commit -m "chore: daily refresh data & model [skip ci]"
+          git push

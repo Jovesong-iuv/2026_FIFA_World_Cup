@@ -104,6 +104,20 @@ CREATE TABLE IF NOT EXISTS ip_access (
     visits INTEGER DEFAULT 0,
     user_agent TEXT
 );
+
+-- 投注台账（仅所有者）：记录实际下注，结算后算 ROI / 盈亏曲线
+CREATE TABLE IF NOT EXISTS bets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT,
+    match TEXT,
+    market TEXT,
+    selection TEXT,
+    odds REAL,
+    stake REAL,
+    status TEXT DEFAULT 'pending',   -- pending / won / lost / push
+    note TEXT,
+    close_odds REAL
+);
 """
 
 
@@ -118,6 +132,9 @@ def _ensure_columns(conn) -> None:
     for col, decl in (("formation", "TEXT"), ("formation_at", "TEXT")):
         if col not in have_t:
             conn.execute(f"ALTER TABLE fm_teams ADD COLUMN {col} {decl}")
+    have_b = {r[1] for r in conn.execute("PRAGMA table_info(bets)")}
+    if "close_odds" not in have_b:
+        conn.execute("ALTER TABLE bets ADD COLUMN close_odds REAL")
 
 
 @contextmanager
