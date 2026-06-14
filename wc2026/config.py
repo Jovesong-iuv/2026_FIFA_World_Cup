@@ -11,8 +11,22 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 
+def _secret(name: str, default: str = "") -> str:
+    """Read Streamlit Cloud secrets as fallback without requiring Streamlit locally."""
+    try:
+        import streamlit as st
+
+        return str(st.secrets.get(name, default))
+    except Exception:
+        return default
+
+
+def _env_or_secret(name: str, default: str = "") -> str:
+    return os.getenv(name) or _secret(name, default)
+
+
 def _flag(name: str, default: str = "false") -> bool:
-    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+    return _env_or_secret(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -22,25 +36,29 @@ class Settings:
     data_dir: Path = ROOT / "data"
 
     # 数据库（本地 sqlite，迁移时换 DATABASE_URL 即可）
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///data/wc2026.db")
+    database_url: str = _env_or_secret("DATABASE_URL", "sqlite:///data/wc2026.db")
 
     # 数据源
-    intl_results_base: str = os.getenv(
+    intl_results_base: str = _env_or_secret(
         "INTL_RESULTS_BASE",
         "https://raw.githubusercontent.com/martj42/international_results/master",
     )
 
     # LLM（可选增强）
     llm_enabled: bool = _flag("LLM_ENABLED", "true")
-    llm_provider: str = os.getenv("LLM_PROVIDER", "anthropic")
-    llm_base_url: str = os.getenv("LLM_BASE_URL", "")
-    llm_api_key: str = os.getenv("LLM_API_KEY", "")
-    llm_model: str = os.getenv("LLM_MODEL", "claude-opus-4-8")
-    llm_anthropic_beta: str = os.getenv("LLM_ANTHROPIC_BETA", "")
-    llm_timeout: float = float(os.getenv("LLM_TIMEOUT", "45"))
+    llm_provider: str = _env_or_secret("LLM_PROVIDER", "anthropic")
+    llm_base_url: str = _env_or_secret("LLM_BASE_URL", "")
+    llm_api_key: str = _env_or_secret("LLM_API_KEY", "")
+    llm_model: str = _env_or_secret("LLM_MODEL", "claude-opus-4-8")
+    llm_anthropic_beta: str = _env_or_secret("LLM_ANTHROPIC_BETA", "")
+    llm_timeout: float = float(_env_or_secret("LLM_TIMEOUT", "45"))
 
     # 赔率源（The Odds API）
-    odds_api_key: str = os.getenv("ODDS_API_KEY", "")
+    odds_api_key: str = _env_or_secret("ODDS_API_KEY", "")
+
+    # 所有者口令：设置后仅 URL 带 ?owner=<该值> 进入所有者模式（可拉取/训练/AI）；
+    # 其他访问为只读访客。留空则不限制（本机/单人使用时全功能）。
+    owner_key: str = _env_or_secret("OWNER_KEY", "")
 
     @property
     def sqlite_path(self) -> Path:

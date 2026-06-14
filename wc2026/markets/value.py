@@ -38,48 +38,24 @@ def value_and_kelly(model_p: dict, odds: dict, kelly_fraction: float = 0.25) -> 
     return out
 
 
-def allocate_stakes(candidates: list[dict], bankroll: float, kelly_fraction: float = 0.25,
-                    max_total_fraction: float = 1.0) -> list[dict]:
-    """按正期望候选项的分数凯利权重，把指定金额分配为下注建议。
+def market_temperature(model_p: dict, fair_p: dict, threshold: float = 0.03) -> dict:
+    """市场冷热：比较模型概率与剔水后市场概率，判断各结果市场偏热/偏冷及热门是否过热。
 
-    candidates 每项至少包含 key/label/market/model_prob/odds；让球等可退本金市场可传 push_prob。
-    返回只包含 edge>0 且建议权重大于 0 的项，stake 合计不超过 bankroll * max_total_fraction。
+    fair_p 为剔水(去 vig)后的市场隐含概率（来自 implied_probs 的 'fair'）。
+    diff = 市场概率 − 模型概率：> threshold 视为「偏热」(市场高估)，< −threshold 为「偏冷」(市场低估/有价值)。
+    返回 {results:{k:{model_prob,market_prob,diff,label}}, favorite, verdict}。
     """
-    if bankroll <= 0:
-        return []
-    rows = []
-    for item in candidates:
-        p = float(item.get("model_prob") or 0.0)
-        push = float(item.get("push_prob") or 0.0)
-        odds = float(item.get("odds") or 0.0)
-        if p <= 0 or odds <= 1.0:
+    results = {}
+    for k, mp in model_p.items():
+        fp = fair_p.get(k)
+        if fp is None:
             continue
-        b = odds - 1.0
-        loss_prob = max(0.0, 1.0 - p - push)
-        edge = p * b - loss_prob
-        kelly_full = edge / b if b > 0 else 0.0
-        weight = max(kelly_full, 0.0) * kelly_fraction
-        if edge <= 0 or weight <= 0:
-            continue
-        rows.append({
-            **item,
-            "model_prob": p,
-            "push_prob": push,
-            "odds": odds,
-            "edge": edge,
-            "kelly_full": max(kelly_full, 0.0),
-            "kelly_frac": weight,
-        })
-    total_weight = sum(r["kelly_frac"] for r in rows)
-    if total_weight <= 0:
-        return []
-    stake_pool = bankroll * max(0.0, min(max_total_fraction, 1.0))
-    for r in rows:
-        r["allocation_pct"] = r["kelly_frac"] / total_weight
-        r["stake"] = stake_pool * r["allocation_pct"]
-        r["expected_profit"] = r["stake"] * r["edge"]
-    rows.sort(key=lambda r: (r["stake"], r["edge"]), reverse=True)
-    return rows
+        diff = fp - mp
+        label = "偏热" if diff > threshold else "偏冷" if diff < -threshold else "中性"
+        results[k] = {"model_prob": mp, "market_prob": fp, "diff": diff, "label": label}
+    favorite = max(model_p, key=model_p.get) if model_p else None
+    verdict = results.get(favorite, {}).get("label", "中性") if favorite else "中性"
+    return {"results": results, "favorite": favorite, "verdict": verdict}
 
 
 def parlay_summary(legs: list[dict], stake: float) -> dict:

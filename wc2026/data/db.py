@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS fm_teams (
     team_lib TEXT PRIMARY KEY,
     fm_id INTEGER,
     fm_name TEXT,
-    updated_at TEXT
+    updated_at TEXT,
+    formation TEXT,
+    formation_at TEXT
 );
 
 -- FotMob 大名单缓存（评分 + 伤停 + 俱乐部 + 头像/队徽 id + 中文名缓存；纯展示）
@@ -77,17 +79,45 @@ CREATE TABLE IF NOT EXISTS fm_squads (
     player_id INTEGER,
     club_id TEXT,
     name_zh TEXT,
+    value REAL,
     PRIMARY KEY (team_lib, player_name)
+);
+
+-- 赔率快照（赔率走势）：每次拉取按市场/选项落一行，captured_at 为抓取时间
+CREATE TABLE IF NOT EXISTS odds_snapshots (
+    captured_at TEXT NOT NULL,
+    home_team TEXT NOT NULL,
+    away_team TEXT NOT NULL,
+    market TEXT NOT NULL,        -- h2h / spreads / totals
+    selection TEXT NOT NULL,     -- h2h: home/draw/away；spreads: home/away；totals: over/under
+    line TEXT,                   -- 让球/大小球盘口线；h2h 为 NULL
+    odds REAL
+);
+CREATE INDEX IF NOT EXISTS idx_odds_snap ON odds_snapshots(home_team, away_team, market, captured_at);
+
+-- 访问 IP 记录（仅所有者后台可见）：每 IP 一行，note 为所有者备注，再次访问自动保留 note
+CREATE TABLE IF NOT EXISTS ip_access (
+    ip TEXT PRIMARY KEY,
+    note TEXT,
+    first_seen TEXT,
+    last_seen TEXT,
+    visits INTEGER DEFAULT 0,
+    user_agent TEXT
 );
 """
 
 
 def _ensure_columns(conn) -> None:
-    """对已存在的 fm_squads 补齐后加的列（ALTER ADD，幂等），避免旧库缺列。"""
+    """对已存在的表补齐后加的列（ALTER ADD，幂等），避免旧库缺列。"""
     have = {r[1] for r in conn.execute("PRAGMA table_info(fm_squads)")}
-    for col, decl in (("player_id", "INTEGER"), ("club_id", "TEXT"), ("name_zh", "TEXT")):
+    for col, decl in (("player_id", "INTEGER"), ("club_id", "TEXT"), ("name_zh", "TEXT"),
+                      ("value", "REAL")):
         if col not in have:
             conn.execute(f"ALTER TABLE fm_squads ADD COLUMN {col} {decl}")
+    have_t = {r[1] for r in conn.execute("PRAGMA table_info(fm_teams)")}
+    for col, decl in (("formation", "TEXT"), ("formation_at", "TEXT")):
+        if col not in have_t:
+            conn.execute(f"ALTER TABLE fm_teams ADD COLUMN {col} {decl}")
 
 
 @contextmanager

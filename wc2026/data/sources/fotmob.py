@@ -146,8 +146,41 @@ def fetch_squad(team_id: int, name_for_slug: str = "team") -> list[dict]:
                 "club_id": mb.get("ccode"),
                 "rating": _to_float(mb.get("rating")),
                 "injury": _injury_text(mb.get("injury")),
+                "value": mb.get("transferValue"),
             })
     return out
+
+
+def _find_formation(obj, depth: int = 0):
+    """递归找 lastLineupStats.formation（最近一场阵型）。"""
+    if depth > 10:
+        return None
+    if isinstance(obj, dict):
+        lls = obj.get("lastLineupStats")
+        if isinstance(lls, dict) and isinstance(lls.get("formation"), str):
+            return lls["formation"]
+        for v in obj.values():
+            r = _find_formation(v, depth + 1)
+            if r:
+                return r
+    elif isinstance(obj, list):
+        for v in obj:
+            r = _find_formation(v, depth + 1)
+            if r:
+                return r
+    return None
+
+
+def fetch_team_formation(team_id: int, name_for_slug: str = "team") -> str | None:
+    """球队 overview 页 → 最近一场阵型（如 '4-2-3-1'）。失败返回 None。"""
+    try:
+        r = _get(f"https://www.fotmob.com/teams/{team_id}/overview/{_slug(name_for_slug)}")
+        m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.+?)</script>', r.text, re.S)
+        if not m:
+            return None
+        return _find_formation(json.loads(m.group(1)))
+    except Exception:
+        return None
 
 
 def player_photo(player_id) -> str | None:
