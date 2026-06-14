@@ -44,6 +44,7 @@ def refresh_fm_squad(team_lib: str) -> dict:
     with get_conn() as conn:
         fm_id, fm_name = _get_fm_id(conn, team_lib)
         players = fm.fetch_squad(fm_id, fm_name)
+        formation = fm.fetch_team_formation(fm_id, fm_name)
         old_zh = {r["player_name"]: r["name_zh"] for r in conn.execute(
             "SELECT player_name, name_zh FROM fm_squads WHERE team_lib=?", (team_lib,))}
         now = _now()
@@ -57,7 +58,10 @@ def refresh_fm_squad(team_lib: str) -> dict:
             "INSERT OR REPLACE INTO fm_squads "
             "(team_lib, player_name, number, position, age, club, rating, injured, injury_note, "
             "updated_at, player_id, club_id, name_zh, value) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
-    return {"team_lib": team_lib, "fm_name": fm_name, "count": len(rows),
+        if formation:
+            conn.execute("UPDATE fm_teams SET formation=?, formation_at=? WHERE team_lib=?",
+                         (formation, now, team_lib))
+    return {"team_lib": team_lib, "fm_name": fm_name, "count": len(rows), "formation": formation,
             "rated": sum(1 for p in players if p["rating"] is not None),
             "injured": sum(1 for p in players if p["injury"])}
 
@@ -66,7 +70,7 @@ def load_fm_squad(team_lib: str) -> dict | None:
     """读 FotMob 缓存 → {fm_name, updated_at, groups}；每名球员附中文俱乐部 + 头像/队徽 URL。"""
     with get_conn() as conn:
         trow = conn.execute(
-            "SELECT fm_name FROM fm_teams WHERE team_lib=?", (team_lib,)).fetchone()
+            "SELECT fm_name, formation FROM fm_teams WHERE team_lib=?", (team_lib,)).fetchone()
         rows = conn.execute(
             "SELECT player_name, number, position, age, club, rating, injured, injury_note, "
             "updated_at, player_id, club_id, name_zh, value "
@@ -85,7 +89,8 @@ def load_fm_squad(team_lib: str) -> dict | None:
         updated = d["updated_at"]
     groups = {k: v for k, v in groups.items() if v}
     return {"fm_name": trow["fm_name"] if trow else team_lib,
-            "updated_at": updated, "groups": groups}
+            "updated_at": updated, "groups": groups,
+            "formation": (trow["formation"] if trow and "formation" in trow.keys() else None)}
 
 
 def squad_value_summary(groups: dict | None) -> dict:

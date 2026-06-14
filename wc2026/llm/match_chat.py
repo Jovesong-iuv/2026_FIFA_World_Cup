@@ -72,6 +72,8 @@ def build_context(d: dict) -> str:
         L.append("赔率价值(用户输入赔率)：" + d["odds_value"])
     if d.get("squad_value"):
         L.append("阵容身价：" + d["squad_value"])
+    if d.get("tactics"):
+        L.append("战术研判：" + d["tactics"])
     if d.get("news_titles"):
         L.append("相关新闻标题：" + "；".join(d["news_titles"][:8]))
     if d.get("extra_text"):

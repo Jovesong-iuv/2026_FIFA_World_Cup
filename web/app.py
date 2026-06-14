@@ -19,6 +19,7 @@ from wc2026.data.ingest import ingest_international_results
 from wc2026.data.sources import news as news_mod
 from wc2026.data.sources.fixtures_2026 import fetch_and_store_fixtures
 from wc2026.data.team_names import zh
+from wc2026.analysis.environment import match_environment_report
 from wc2026.llm import reasoning
 from wc2026.markets import derive, value
 from wc2026.models.predictor import DC_PATH, ELO_PATH, get_model, train_and_save
@@ -278,6 +279,53 @@ def render_access_banner() -> None:
             st.caption("🔑 所有者模式：可拉取赔率 / 训练 / AI。")
     else:
         st.caption("👀 只读访客：可浏览与选择查看；拉取 / 训练 / AI 按钮已锁定（避免消耗配额与 token）。")
+
+
+def get_client_ip() -> tuple[str, str]:
+    """返回 (ip, user_agent)。优先取代理头 X-Forwarded-For / X-Real-Ip；本地无代理时回退。"""
+    try:
+        h = st.context.headers or {}
+        ua = h.get("User-Agent") or h.get("user-agent") or ""
+        xff = h.get("X-Forwarded-For") or h.get("x-forwarded-for")
+        if xff:
+            return xff.split(",")[0].strip(), ua
+        xri = h.get("X-Real-Ip") or h.get("x-real-ip")
+        if xri:
+            return xri.strip(), ua
+        return "本地/未知", ua
+    except Exception:
+        return "本地/未知", ""
+
+
+def render_access_log() -> None:
+    """所有者后台：访问 IP 记录 + 备注编辑（同 IP 再访问自动保留备注）。"""
+    from wc2026.data import access_log
+    section_title("访问记录（所有者后台）")
+    rows = access_log.list_access()
+    if not rows:
+        st.caption("暂无访问记录。")
+        return
+    st.caption(f"共 {len(rows)} 个 IP。可在「备注」列填写姓名等并保存；同一 IP 再次访问会自动保留备注。")
+    df = pd.DataFrame([{
+        "IP": r["ip"], "备注": r["note"] or "", "访问次数": r["visits"],
+        "首次": r["first_seen"], "最近": r["last_seen"],
+        "User-Agent": (r["user_agent"] or "")[:60],
+    } for r in rows])
+    edited = st.data_editor(
+        df, hide_index=True, width="stretch", key="access_editor",
+        column_config={c: st.column_config.Column(disabled=True)
+                       for c in ["IP", "访问次数", "首次", "最近", "User-Agent"]},
+    )
+    if st.button("💾 保存备注"):
+        before = {r["ip"]: (r["note"] or "") for r in rows}
+        changed = 0
+        for _, row in edited.iterrows():
+            ip, note = row["IP"], (row["备注"] or "").strip()
+            if before.get(ip, "") != note:
+                access_log.set_note(ip, note)
+                changed += 1
+        st.success(f"已保存 {changed} 条备注。")
+        st.rerun()
 
 
 def render_admin_user_panel() -> None:
@@ -754,6 +802,18 @@ user = require_login()
 model = load_model()
 fixtures = load_fixtures()
 
+# 每个会话记录一次访问 IP（建表 + upsert，同 IP 保留备注）
+if not st.session_state.get("_visit_logged"):
+    try:
+        from wc2026.data.db import init_db
+        from wc2026.data import access_log
+        init_db()
+        _ip, _ua = get_client_ip()
+        access_log.record_visit(_ip, _ua)
+    except Exception:
+        pass
+    st.session_state["_visit_logged"] = True
+
 render_hero(
     "2026 世界杯预测工作台",
     "比分概率、盘口价值、串关组合与证据分析集中在一个可操作界面中。模型结论仅供参考，请理性参与并遵守当地法规。",
@@ -762,6 +822,8 @@ render_hero(
 with st.sidebar:
     st.header("功能")
     page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "串关组合"]
+    if is_owner():
+        page_options.append("访问记录")
     if user["role"] == "admin":
         page_options.append("用户管理")
     page = st.radio("页面", page_options, horizontal=True)
@@ -773,6 +835,9 @@ with st.sidebar:
 
 if page == "首页":
     render_home(model)
+    st.stop()
+if page == "访问记录":
+    render_access_log()
     st.stop()
 if page == "小组赛赛程":
     render_schedule(model)
@@ -893,6 +958,8 @@ c3.metric(f"{zh(away)} 胜", f"{x['away']:.1%}", f"公平赔率 {odds['away']:.2
 c4.metric("模型预期进球", f"{lam:.2f} : {mu:.2f}")
 st.caption(f"数据刷新说明：胜平负和模型预期进球由当前本地模型即时计算；模型文件最近更新时间 {model_updated_label()}。侧边栏「一键全量刷新」或脚本/API 刷新后才会重训并更新。")
 
+env_report = match_environment_report(home, away, mat, fixture=selected_fixture)
+
 left, right = st.columns([3, 2])
 with left:
     section_title("比分概率热力图")
@@ -929,6 +996,24 @@ with uc2:
         st.markdown(f"- **{f['name']}**：{f['detail']}")
 st.caption("爆冷指数衡量「把热门方当稳胆」的风险，不预测弱队一定爆冷；指数越高，越不适合作为无脑稳胆。"
            "暂未纳入伤停 / 海拔 / 时差 / 历史大赛不稳定性（项目无对应结构化数据源）。")
+
+section_title("赛前环境与背景适应性")
+env_score = env_report["score_pick"]
+ec1, ec2 = st.columns([1, 3])
+with ec1:
+    st.metric("环境/背景参考比分", env_score["score"], f"{env_score['prob']:.1%}", delta_color="off")
+    st.caption(env_score["basis"])
+with ec2:
+    st.dataframe(pd.DataFrame(env_report["environment"]), hide_index=True, width="stretch")
+
+ad1, ad2 = st.columns([1, 1])
+with ad1:
+    st.caption("球队适应性")
+    st.dataframe(pd.DataFrame(env_report["adaptation"]), hide_index=True, width="stretch")
+with ad2:
+    st.caption("国家背景关系")
+    st.dataframe(pd.DataFrame(env_report["background"]), hide_index=True, width="stretch")
+st.caption("说明：该模块参考时区、球场、海拔、气候、远征和宏观国家背景做定性补充；政治/经济关系不作为直接胜负变量，赛果仍以模型概率、阵容状态和临场信息为主。")
 
 section_title("综合实力评分")
 from wc2026.analysis import strength
@@ -1370,6 +1455,18 @@ with st.expander("👥 阵容 / 评分 / 伤停（FotMob · 免费无需 key · 
         else:
             st.caption("（暂无评分数据——世界杯赛前 FotMob 评分多为空，开赛后逐场填充；伤停信息仍有效。）")
 
+        from wc2026.analysis import tactics as _tactics
+        _tr = _tactics.tactical_read(
+            zh(home), zh(away),
+            sq_home.get("formation") if sq_home else None,
+            sq_away.get("formation") if sq_away else None,
+            gk_home=avg_h.get("Goalkeeper"), gk_away=avg_a.get("Goalkeeper"))
+        st.markdown("**🎯 战术与阵容研判（判断修正参考）**")
+        for _n in _tr["notes"]:
+            st.markdown(f"- {_n}")
+        st.caption("阵型取自 FotMob 最近一场；门将/球员评分赛前多为空、开赛后填充。"
+                   "以上为方向性人工修正参考，不直接改写模型概率（模型按真实赛果校准）。")
+
 
 with st.expander("🤖 AI 对话（结合本场全部已加载数据问答 / 粘贴材料分析）", expanded=False):
     if not llm_configured():
@@ -1393,6 +1490,13 @@ with st.expander("🤖 AI 对话（结合本场全部已加载数据问答 / 粘
             _b = _squads.squad_value_summary(sq_away["groups"] if sq_away else None)
             if _a["total"] or _b["total"]:
                 _sv = f"{zh(home)} €{_a['total'] / 1e6:.0f}m vs {zh(away)} €{_b['total'] / 1e6:.0f}m"
+        _tact = None
+        if (sq_home and sq_home.get("formation")) or (sq_away and sq_away.get("formation")):
+            from wc2026.analysis import tactics as _tac
+            _tr2 = _tac.tactical_read(zh(home), zh(away),
+                                      sq_home.get("formation") if sq_home else None,
+                                      sq_away.get("formation") if sq_away else None)
+            _tact = "；".join(_tr2["notes"])
         ev = reason["evidence"]
         ctx = match_chat.build_context({
             "home": zh(home), "away": zh(away),
@@ -1404,7 +1508,7 @@ with st.expander("🤖 AI 对话（结合本场全部已加载数据问答 / 粘
             "correct_score_top": markets["correct_score_top"],
             "upset": ui, "strength": sp, "goal_rec": gs,
             "h2h": ev["h2h"], "home_form": ev["home_form"], "away_form": ev["away_form"],
-            "squad_value": _sv, "news_titles": _news_titles,
+            "squad_value": _sv, "news_titles": _news_titles, "tactics": _tact,
         })
         chat_key = f"matchchat:{home}:{away}"
         history = st.session_state.setdefault(chat_key, [])
