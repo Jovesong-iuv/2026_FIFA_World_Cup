@@ -1,0 +1,110 @@
+{
+  "trained_through": "",
+  "updated_at": "2026-06-15T06:34:23+00:00",
+  "teams": {
+    "Mexico": {
+      "elo": 12.87,
+      "attack": -0.0086,
+      "defense": -0.0338,
+      "sources": [
+        {
+          "type": "result",
+          "detail": "Mexico 2-0 South Africa",
+          "delta_elo": 12.9,
+          "at": "2026-06-11"
+        }
+      ]
+    },
+    "South Africa": {
+      "elo": -12.87,
+      "attack": -0.0338,
+      "defense": -0.0086,
+      "sources": [
+        {
+          "type": "result",
+          "detail": "Mexico 2-0 South Africa",
+          "delta_elo": -12.9,
+          "at": "2026-06-11"
+        }
+      ]
+    },
+    "South Korea": {
+      "elo": 16.8,
+      "attack": 0.0368,
+      "defense": -0.0024,
+      "sources": [
+        {
+          "type": "result",
+          "detail": "South Korea 2-1 Czech Republic",
+          "delta_elo": 16.8,
+          "at": "2026-06-12"
+        }
+      ]
+    },
+    "Czech Republic": {
+      "elo": -16.8,
+      "attack": -0.0024,
+      "defense": 0.0368,
+      "sources": [
+        {
+          "type": "result",
+          "detail": "South Korea 2-1 Czech Republic",
+          "delta_elo": -16.8,
+          "at": "2026-06-12"
+        }
+      ]
+    },
+    "Canada": {
+      "elo": -25.73,
+      "attack": -0.0538,
+      "defense": 0.0223,
+      "sources": [
+        {
+          "type": "result",
+          "detail": "Canada 1-1 Bosnia and Herzegovina",
+          "delta_elo": -25.7,
+          "at": "2026-06-12"
+        }
+      ]
+    },
+    "Bosnia and Herzegovina": {
+      "elo": 25.73,
+      "attack": 0.0223,
+      "defense": -0.0538,
+      "sources": [
+        {
+          "type": "result",
+          "detail": "Canada 1-1 Bosnia and Herzegovina",
+          "delta_elo": 25.7,
+          "at": "2026-06-12"
+        }
+      ]
+    },
+    "United States": {
+      "elo": 34.76,
+      "attack": 0.1702,
+      "defense": -0.0163,
+      "sources": [
+        {
+          "type": "result",
+          "detail": "United States 4-1 Paraguay",
+          "delta_elo": 34.8,
+          "at": "2026-06-13"
+        }
+      ]
+    },
+    "Paraguay": {
+      "elo": -34.76,
+      "attack": -0.0163,
+      "defense": 0.1702,
+      "sources": [
+        {
+          "type": "result",
+          "detail": "United States 4-1 Paraguay",
+          "delta_elo": -34.8,
+          "at": "2026-06-13"
+        }
+      ]
+    }
+  }
+}

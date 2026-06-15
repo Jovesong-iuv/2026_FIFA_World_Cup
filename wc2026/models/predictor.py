@@ -6,6 +6,7 @@ Dixon-Coles 提供比分分布形状(大小球/让球)。
 """
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 
 import numpy as np
@@ -18,6 +19,7 @@ from wc2026.models.elo import EloModel
 
 DC_PATH = settings.data_dir / "dc_model.json"
 ELO_PATH = settings.data_dir / "elo_model.json"
+META_PATH = settings.data_dir / "model_meta.json"
 ENSEMBLE_W = 0.5  # DC 权重；其余给 Elo
 
 
@@ -87,6 +89,18 @@ class EnsembleModel:
         return _recalibrate(mat, px, ens)
 
 
+def _write_meta(df: pd.DataFrame) -> None:
+    """记录训练数据覆盖到的最新比赛日期，供赛中增量修正防双重计数。"""
+    try:
+        mx = str(pd.to_datetime(df["date"]).max().date())
+        META_PATH.write_text(
+            json.dumps({"trained_through": mx, "trained_at": date.today().isoformat()},
+                       ensure_ascii=False),
+            encoding="utf-8")
+    except Exception:
+        pass
+
+
 def train_and_save(since_years: int = 12, xi: float = 0.0010) -> EnsembleModel:
     since = (date.today() - timedelta(days=365 * since_years)).isoformat()
     df = load_matches(since=since)
@@ -97,12 +111,22 @@ def train_and_save(since_years: int = 12, xi: float = 0.0010) -> EnsembleModel:
     dc.save(DC_PATH)
     elo = EloModel().fit(df)
     elo.save(ELO_PATH)
+    _write_meta(df)
     return EnsembleModel(dc, elo)
 
 
-def get_model(force_retrain: bool = False) -> EnsembleModel:
+def get_model(force_retrain: bool = False, adjusted: bool = True) -> EnsembleModel:
     if not force_retrain and DC_PATH.exists():
         dc = DixonColesModel.load(DC_PATH)
         elo = EloModel.load(ELO_PATH) if ELO_PATH.exists() else None
-        return EnsembleModel(dc, elo)
-    return train_and_save()
+        model = EnsembleModel(dc, elo)
+    else:
+        model = train_and_save()
+    if adjusted:
+        # 叠加赛中实力修正(已完赛结果/新闻)；缺修正或异常时退回原模型
+        try:
+            from wc2026.analysis.adjustments import apply_adjustments
+            model = apply_adjustments(model)
+        except Exception:
+            pass
+    return model

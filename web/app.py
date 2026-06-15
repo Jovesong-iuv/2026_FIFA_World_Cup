@@ -730,6 +730,73 @@ def _qualify_color(p: float) -> str:
     return "#dc2626"
 
 
+def _standings_table_html(group: str, rows: list[dict], state: dict | None = None) -> str:
+    """小组真实积分榜表格：前二绿条、第三黄条；末轮标注战意。"""
+    from wc2026.analysis.motivation import STATUS_LABEL
+    state = state or {}
+    head = (f'<div style="display:inline-block;background:#2563eb;color:#fff;padding:2px 10px;'
+            f'border-radius:6px;font-weight:700;margin-bottom:8px;">{group} 积分榜</div>')
+    cols = ["#", "球队", "赛", "胜", "平", "负", "进", "失", "净", "分"]
+    thead = "<tr>" + "".join(
+        f'<th style="padding:2px 4px;text-align:center;color:var(--wc-muted);font-weight:600;">{c}</th>'
+        for c in cols) + "</tr>"
+    body = ""
+    for r in rows:
+        bar = "#16a34a" if r["rank"] <= 2 else ("#d97706" if r["rank"] == 3 else "transparent")
+        s = state.get(r["team"], "alive")
+        tag = ("" if s == "alive"
+               else f'<span style="font-size:10px;color:var(--wc-muted);margin-left:4px;">{STATUS_LABEL[s]}</span>')
+        tds = [f'<td style="text-align:center;border-left:3px solid {bar};padding:2px 4px;">{r["rank"]}</td>',
+               f'<td style="padding:2px 4px;white-space:nowrap;">{zh(r["team"])}{tag}</td>']
+        tds += [f'<td style="text-align:center;padding:2px 4px;">{r[k]}</td>'
+                for k in ("played", "w", "d", "l", "gf", "ga")]
+        tds.append(f'<td style="text-align:center;padding:2px 4px;">{r["gd"]:+d}</td>')
+        tds.append(f'<td style="text-align:center;padding:2px 4px;font-weight:700;">{r["pts"]}</td>')
+        body += "<tr>" + "".join(tds) + "</tr>"
+    return (f'<div style="border:1px solid var(--wc-line);border-radius:10px;padding:10px 12px;'
+            f'margin-bottom:14px;background:var(--wc-surface);">{head}'
+            f'<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+            f'<thead>{thead}</thead><tbody>{body}</tbody></table></div>')
+
+
+def _adjustments_expander() -> None:
+    """展示当前赛中实力修正明细(各队 δ + 依据)，可回滚说明。"""
+    from wc2026.analysis.adjustments import load_adjustments
+    adj = load_adjustments()
+    with st.expander(f"🔧 赛中实力修正明细（{len(adj)} 支球队）", expanded=False):
+        if not adj:
+            st.caption("暂无修正：尚无超出训练快照的完赛结果，或已重置。预测使用赛前模型。")
+            return
+        rows = sorted(adj.items(), key=lambda kv: abs(kv[1].get("elo", 0)), reverse=True)
+        st.dataframe(pd.DataFrame([{
+            "球队": zh(t),
+            "Elo δ": f'{e.get("elo", 0):+.0f}',
+            "进攻 δ": f'{e.get("attack", 0):+.3f}',
+            "防守 δ": f'{e.get("defense", 0):+.3f}',
+            "依据": "；".join(s.get("detail", "") for s in e.get("sources", [])[:4]),
+        } for t, e in rows]), hide_index=True, width="stretch")
+        st.caption("修正来自已完赛结果(高权重)与可选新闻；有界、可解释、可回滚"
+                   "(删除 data/team_adjustments.json 或重置即恢复赛前模型)。")
+
+
+def _auto_group_state(model, fixture, home: str, away: str):
+    """末轮(赛事进行中)从当前积分自动推导战意 group_state；非末轮/无意义 → (None, '')。"""
+    if not fixture or not fixture.get("group_name"):
+        return None, ""
+    g = fixture["group_name"]
+    try:
+        from wc2026.analysis import groups as _grp, motivation as _motiv
+        states = _motiv.derive_group_states(_grp.load_group_data(model))
+        if g not in states or (home not in states[g] and away not in states[g]):
+            return None, ""
+        gs = _motiv.group_state_for(states, g, home, away)
+        if all(v["status"] == "alive" for v in gs.values()):
+            return None, ""
+        return gs, _motiv.status_note(states, g, home, away)
+    except Exception:
+        return None, ""
+
+
 def _group_card_html(group: str, rows: list[dict]) -> str:
     head = (f'<div style="display:inline-block;background:#2563eb;color:#fff;padding:2px 10px;'
             f'border-radius:6px;font-weight:700;margin-bottom:8px;">{group}</div>')
@@ -751,13 +818,29 @@ def _group_card_html(group: str, rows: list[dict]) -> str:
 
 def render_group_stage(model) -> None:
     from wc2026.analysis import groups as groups_mod
+    from wc2026.analysis import motivation as motiv_mod
+    gd = groups_mod.load_group_data(model)
+    if not gd:
+        section_title("小组出线概率")
+        st.warning("暂无可用的小组赛程数据（需先刷新 2026 赛程）。")
+        return
+
+    section_title("小组积分榜")
+    st.caption("基于已完赛比分的真实积分(积分>净胜球>进球>相互战绩)；"
+               "绿条=前二出线区，黄条=小组第三(争最佳第三递补)。末轮自动标注战意。")
+    _adjustments_expander()
+    standings = groups_mod.compute_standings(gd)
+    states = motiv_mod.derive_group_states(gd)
+    scols = st.columns(3)
+    for i, g in enumerate(sorted(standings)):
+        with scols[i % 3]:
+            st.markdown(_standings_table_html(g, standings[g], states.get(g, {})),
+                        unsafe_allow_html=True)
+
+    st.markdown("---")
     section_title("小组出线概率")
     st.caption("每组前 2 名直接晋级，12 个小组第三中成绩最好的 8 个递补晋级。"
                "系统基于蒙特卡洛模拟，结合模型比分概率实时计算。")
-    gd = groups_mod.load_group_data(model)
-    if not gd:
-        st.warning("暂无可用的小组赛程数据（需先刷新 2026 赛程）。")
-        return
     sig = groups_mod.played_signature(gd)
     total = sum(len(v["matches"]) for v in gd.values())
     c1, c2 = st.columns([2, 1])
@@ -1114,10 +1197,12 @@ with st.sidebar:
             from wc2026.data.results import backfill_fixture_scores, export_results_json
             backfill_fixture_scores()
             export_results_json()
-            train_and_save()
+            _m = train_and_save()
+            from wc2026.analysis.adjustments import recompute
+            recompute(_m, with_news=False)
             st.cache_resource.clear()
             st.cache_data.clear()
-        st.success("已刷新（含赛果回填）")
+        st.success("已刷新（含赛果回填 + 赛中实力修正）")
         st.rerun()
     st.divider()
     st.caption("LLM 理由/分析：" + ("✅ 已配置，可手动触发" if llm_configured() else "⚠️ 规则模板(未接入)"))
@@ -1148,11 +1233,21 @@ if selected_fixture is not None:
     else:
         st.info(f"⏳ 未开赛（{_sch2.beijing(selected_fixture.get('date_utc'))['full']} 北京时间）；以下为赛前模型预测。")
 
+auto_group_state, auto_note = _auto_group_state(model, selected_fixture, home, away)
 if use_context:
     from wc2026.analysis import context
-    adj = context.adjusted_prediction(model, home, away, neutral, tank_risk=tank_risk)
+    adj = context.adjusted_prediction(model, home, away, neutral,
+                                      group_state=auto_group_state, tank_risk=tank_risk)
     mat, (lam, mu), context_notes = adj["matrix"], adj["exp_goals"], adj["notes"]
     effective_tank = adj["tank_risk"]
+elif auto_group_state is not None:
+    # 末轮：未手动开启情境，但当前积分形势显示有出线压力 → 自动应用战意修正
+    from wc2026.analysis import context
+    adj = context.adjusted_prediction(model, home, away, neutral, group_state=auto_group_state)
+    mat, (lam, mu), context_notes = adj["matrix"], adj["exp_goals"], adj["notes"]
+    effective_tank = adj["tank_risk"]
+    if auto_note:
+        st.info("🎯 末轮战意自动修正(按当前积分形势)：" + auto_note)
 else:
     mat = model.score_matrix(home, away, neutral)
     lam, mu = model.expected_goals(home, away, neutral)
