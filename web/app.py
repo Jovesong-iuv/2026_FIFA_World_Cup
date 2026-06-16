@@ -1122,6 +1122,157 @@ def render_schedule(model) -> None:
                "缺失回退模型 Elo；比分在赛程数据更新后自动显示。")
 
 
+def render_bold_predictions(model) -> None:
+    """大胆预测页面：比分预测 + 进球量 + 冷门推荐。"""
+    from wc2026.analysis.bold_predictions import fixture_predictions
+    from wc2026.analysis import ranking as rk
+
+    section_title("⚡ 大胆预测 · 比分 / 进球 / 冷门")
+    st.caption("以下预测基于当前模型比分矩阵，结合实际比赛中比分的高度随机性，给出多比分参考与冷门提醒。"
+               "模型结论仅供娱乐参考，请理性参与。")
+
+    rows = fixture_predictions(model)
+    if not rows:
+        st.warning("暂无小组赛赛程数据。")
+        return
+
+    # 过滤控件
+    groups = sorted({r["group_raw"] for r in rows})
+    sel_group = st.selectbox("分组", ["全部"] + groups, key="bold_group")
+    show_played = st.checkbox("显示已完赛场次", value=False, key="bold_played")
+    only_upset = st.checkbox("只看冷门关注（爆冷指数 ≥ 60）", value=False, key="bold_upset")
+
+    filtered = rows
+    if sel_group != "全部":
+        filtered = [r for r in filtered if r["group_raw"] == sel_group]
+    if not show_played:
+        filtered = [r for r in filtered if not r["finished"]]
+    if only_upset:
+        filtered = [r for r in filtered if r["is_upset_watch"]]
+
+    # 统计
+    unplayed = [r for r in rows if not r["finished"]]
+    upset_count = sum(1 for r in unplayed if r["is_upset_watch"])
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("小组赛场次", len(rows))
+    col2.metric("未开赛", len(unplayed))
+    col3.metric("冷门关注", upset_count)
+    col4.metric("当前筛选", len(filtered))
+
+    if not filtered:
+        st.info("当前筛选条件下无场次。")
+        return
+
+    st.divider()
+
+    # 构建展示行
+    display = []
+    for r in filtered:
+        home_zh = zh(r["home"])
+        away_zh = zh(r["away"])
+        upset = r["upset"]
+        goal = r["goal"]
+
+        # 比分预测
+        score_pred = r["top_scores_display"] if not r["finished"] else f"✅ {r['result']}"
+
+        # 进球区间
+        if goal:
+            goal_text = f"{goal['recommend']}（XG {goal['xg_total']:.1f}）"
+        else:
+            goal_text = "—"
+
+        # 爆冷
+        if upset:
+            upset_level = upset["level"]
+            upset_idx = upset["index"]
+            fav = upset.get("favorite", "")  # favorite 是球队名（库名）
+            dog_team = r["away"] if fav == r["home"] else r["home"]
+            upset_text = f"{upset_idx}/100 {upset_level}"
+            if upset_idx >= 60:
+                upset_text += f" ⚠️ {zh(dog_team)}有机会"
+        else:
+            upset_text = "—"
+
+        # 冷门标记
+        upset_tag = "🔥" if r["is_upset_watch"] else ""
+
+        display.append({
+            "冷门": upset_tag,
+            "小组": r["group"],
+            "轮": f"第{r['round']}轮",
+            "日期": r["date_str"],
+            "北京时间": r["time"],
+            "主队": f"{r['home_flag']} {home_zh}",
+            "客队": f"{r['away_flag']} {away_zh}",
+            "预测比分": score_pred,
+            "推荐进球区间": goal_text,
+            "爆冷指数": upset_text,
+        })
+
+    # 按小组排序
+    display.sort(key=lambda d: (d["小组"], d["轮"]))
+
+    st.dataframe(
+        pd.DataFrame(display),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "冷门": st.column_config.TextColumn(width="small"),
+            "小组": st.column_config.TextColumn(width="small"),
+            "轮": st.column_config.TextColumn(width="small"),
+        },
+    )
+
+    # 冷门详情
+    upset_watch = [r for r in filtered if r["is_upset_watch"]]
+    if upset_watch:
+        st.divider()
+        st.subheader("🔥 冷门关注场次详解")
+        for r in upset_watch:
+            home_zh = zh(r["home"])
+            away_zh = zh(r["away"])
+            upset = r["upset"]
+            goal = r["goal"]
+
+            with st.expander(
+                f"{r['home_flag']} {home_zh} vs {away_zh} {r['away_flag']} "
+                f"· {r['group']} 第{r['round']}轮 · 爆冷 {upset['index']}/100"
+            ):
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.markdown("**🏟 赛程**")
+                    st.write(f"🕐 {r['date_str']} {r['weekday']} {r['time']}（北京）")
+                    st.write(f"📍 {r['location']}")
+                    st.markdown("**🎯 比分预测（Top-3）**")
+                    if r["top_scores"]:
+                        for s in r["top_scores"]:
+                            st.write(f"• {s['score']} — {s['prob']:.1%}")
+                    st.markdown("**⚽ 进球区间**")
+                    if goal:
+                        st.write(f"推荐 **{goal['recommend']}** · 期望总进球 {goal['xg_total']:.1f}")
+                        for reason in goal["reasons"]:
+                            st.write(f"• {reason}")
+                with col_b:
+                    st.markdown("**⚠️ 爆冷因子**")
+                    if upset:
+                        fav = upset.get("favorite", "")  # favorite 是球队名（库名）
+                        is_home_fav = fav == r["home"]
+                        fav_name = zh(r["home"]) if is_home_fav else zh(r["away"])
+                        dog_name = zh(r["away"]) if is_home_fav else zh(r["home"])
+                        st.write(f"热门方：{fav_name} · 冷门方：{dog_name}")
+                        st.write(f"爆冷指数：**{upset['index']}/100** — {upset['level']}")
+                        for f in upset.get("factors", []):
+                            st.write(f"• **{f['name']}**：{f['detail']}")
+
+    st.caption(
+        "🎲 比分高度随机：以上为模型概率最高的比分组合，不代表必然发生。"
+        "小组赛末轮尤其留意出线形势——已出线可能轮换、已淘汰战意下降，结果更不可控。"
+        "冷门指数衡量「把热门当稳胆」的风险，指数越高越不适合做无脑稳胆。"
+    )
+
+
 inject_design_system()
 user = require_login()
 require_view_access()  # 访问口令墙：设了 ACCESS_PASSWORD 才生效；管理员 ?owner= 免口令
@@ -1147,7 +1298,7 @@ render_hero(
 
 with st.sidebar:
     st.header("功能")
-    page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "串关组合"]
+    page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "大胆预测", "串关组合"]
     if is_owner():
         page_options.append("访问记录")
         page_options.append("投注台账")
@@ -1177,6 +1328,9 @@ if page == "串关组合":
     st.stop()
 if page == "小组出线":
     render_group_stage(model)
+    st.stop()
+if page == "大胆预测":
+    render_bold_predictions(model)
     st.stop()
 if page == "用户管理":
     render_user_management()
