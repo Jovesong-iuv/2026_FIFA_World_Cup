@@ -3,6 +3,7 @@
 启动： streamlit run web/app.py
 """
 import sys
+import hmac
 from datetime import datetime
 from pathlib import Path
 
@@ -262,6 +263,40 @@ def is_owner() -> bool:
     except Exception:
         supplied_owner = None
     return owner_key_matches(settings.owner_key, supplied_owner)
+
+
+def require_view_access() -> None:
+    """站点访问口令墙：设了 ACCESS_PASSWORD 时，普通网址访问需先输入口令才能查看；
+    带正确 ?owner=<OWNER_KEY> 的管理员沿用老方式直接放行（免口令）。留空=不限制。
+
+    注意：仅当 OWNER_KEY 已设置且参数匹配才免口令；OWNER_KEY 为空时不放行任何人，
+    避免“设了访问口令却人人免验”。"""
+    pwd = (settings.access_password or "").strip()
+    if not pwd:
+        return  # 未配置访问口令：不限制（本机/单人使用时全功能）
+    if settings.owner_key and is_owner():
+        return  # 管理员带正确 ?owner= 参数：老方式不变，免口令
+    if st.session_state.get("_view_ok"):
+        return
+    st.markdown(
+        """
+        <div class="wc-login">
+            <h1>2026 世界杯预测</h1>
+            <p>本看板需访问口令，请输入后查看。</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.form("view_gate_form"):
+        supplied = st.text_input("访问口令", type="password")
+        submitted = st.form_submit_button("进入")
+    if submitted:
+        if hmac.compare_digest(supplied.strip(), pwd):
+            st.session_state["_view_ok"] = True
+            st.rerun()
+        else:
+            st.error("口令错误。")
+    st.stop()
 
 
 def action_button(label: str, **kwargs) -> bool:
@@ -1089,6 +1124,7 @@ def render_schedule(model) -> None:
 
 inject_design_system()
 user = require_login()
+require_view_access()  # 访问口令墙：设了 ACCESS_PASSWORD 才生效；管理员 ?owner= 免口令
 model = load_model()
 fixtures = load_fixtures()
 
