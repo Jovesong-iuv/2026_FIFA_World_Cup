@@ -112,6 +112,50 @@ def predict(home: str, away: str, neutral: bool = True, save: bool = True,
     return result
 
 
+@app.get("/intelligence")
+def intelligence_ep(home: str, away: str, neutral: bool = True,
+                    match_number: int | None = None,
+                    odds_home: float | None = None, odds_draw: float | None = None,
+                    odds_away: float | None = None) -> dict:
+    """单场智能体报告（MatchIntelligenceReport）：九维度 + 组合模型预测 + 赔率后验 + 风险/总结。
+
+    赔率仅做后验校验，不进入预测主链。可选 match_number 加载赛程/场馆与末轮战意。
+    """
+    from wc2026.analysis.intelligence import build_report
+    h, a = to_lib(home), to_lib(away)
+    model = get_model()
+    missing = [t for t in (h, a) if not model.has_team(t)]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"球队不在训练集中: {missing}")
+
+    fixture = fixtures = group_state = None
+    if match_number is not None:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT match_number, round_number, date_utc, home_team, away_team, "
+                "group_name, location, home_score, away_score FROM fixtures WHERE match_number=?",
+                (match_number,)).fetchone()
+            frows = conn.execute(
+                "SELECT match_number, date_utc, home_team, away_team, location "
+                "FROM fixtures WHERE predictable=1").fetchall()
+        fixture = dict(row) if row else None
+        fixtures = [dict(r) for r in frows]
+        if fixture and fixture.get("group_name"):
+            try:
+                from wc2026.analysis import groups as _groups, motivation as _motiv
+                states = _motiv.derive_group_states(_groups.load_group_data(model))
+                group_state = _motiv.group_state_for(states, fixture["group_name"], h, a)
+            except Exception:
+                group_state = None
+
+    odds_1x2 = None
+    if all(o and o > 1.0 for o in (odds_home, odds_draw, odds_away)):
+        odds_1x2 = {"home": odds_home, "draw": odds_draw, "away": odds_away}
+
+    return build_report(model, h, a, neutral, fixture=fixture, fixtures=fixtures,
+                        odds_1x2=odds_1x2, group_state=group_state)
+
+
 @app.get("/evidence")
 def evidence_ep(home: str, away: str) -> dict:
     h, a = to_lib(home), to_lib(away)
