@@ -255,6 +255,9 @@ def inject_design_system() -> None:
             padding-bottom: 2px;
         }
         div[data-testid="stHorizontalBlock"]:has(.wc-brand) div[role="radiogroup"] label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
             min-height: 38px;
             margin: 0;
             padding: 0 12px;
@@ -357,7 +360,8 @@ def inject_design_system() -> None:
             grid-template-columns: 1fr auto;
             gap: 12px;
             align-items: center;
-            min-height: 30px;
+            min-height: 36px;
+            margin: 4px 0;
             font-size: 16px;
             font-weight: 800;
         }
@@ -365,10 +369,11 @@ def inject_design_system() -> None:
             min-width: 42px;
             text-align: center;
             border-radius: 8px;
-            padding: 4px 8px;
+            padding: 7px 8px;
             background: var(--wc-surface-2);
             color: var(--wc-text);
             font-weight: 900;
+            line-height: 1.1;
         }
         .wc-status {
             color: var(--wc-primary);
@@ -431,6 +436,8 @@ def inject_design_system() -> None:
             .wc-team-row {
                 font-size: 14px;
                 grid-template-columns: minmax(0, 1fr) auto;
+                min-height: 34px;
+                margin: 5px 0;
             }
             .wc-team-row span:first-child {
                 overflow: hidden;
@@ -1718,18 +1725,23 @@ auto_group_state, auto_note = _auto_group_state(model, selected_fixture, home, a
 # 克莱门特组合模型为预测主链：基线 λ → 东道主/末轮战意/控分(context) → 有界软信号(战术/体能/射门残差)。
 from wc2026.analysis import clemente
 from wc2026.data import squads as squads_mod
+from wc2026.data.sources import fbref as fbref_mod
 _cl_group_state = auto_group_state if (use_context or auto_group_state is not None) else None
 # 复用 FotMob 缓存(无网络)：真实阵型喂战术因子，总身价升级「阵容实力」维度为真实
 _sq_h = squads_mod.load_fm_squad(home)
 _sq_a = squads_mod.load_fm_squad(away)
 _val_h = squads_mod.squad_value_summary(_sq_h["groups"])["total"] if _sq_h else 0.0
 _val_a = squads_mod.squad_value_summary(_sq_a["groups"])["total"] if _sq_a else 0.0
+# 复用 FBref 缓存(无网络)：真实 xG/射门 → 升级「射门效率」维度为真实(无缓存则回退 proxy)
+_fin_h = fbref_mod.finishing_score(fbref_mod.load_shooting(home))
+_fin_a = fbref_mod.finishing_score(fbref_mod.load_shooting(away))
 cl = clemente.predict(model, home, away, neutral,
                       fixtures=fixtures, fixture=selected_fixture,
                       group_state=_cl_group_state, tank_risk=tank_risk if use_context else False,
                       home_formation=(_sq_h or {}).get("formation"),
                       away_formation=(_sq_a or {}).get("formation"),
-                      squad_value_home=(_val_h or None), squad_value_away=(_val_a or None))
+                      squad_value_home=(_val_h or None), squad_value_away=(_val_a or None),
+                      finishing_home=_fin_h, finishing_away=_fin_a)
 mat = cl["matrix"]
 lam, mu = cl["exp_goals"]
 context_notes = cl["notes"]
@@ -2398,6 +2410,36 @@ with st.expander("👥 阵容 / 评分 / 伤停（FotMob · 免费无需 key · 
             st.markdown(f"- {_n}")
         st.caption("阵型取自 FotMob 最近一场；门将/球员评分赛前多为空、开赛后填充。"
                    "以上为方向性人工修正参考，不直接改写模型概率（模型按真实赛果校准）。")
+
+
+with st.expander("🎯 FBref 射门 / xG（升级「射门效率」维度 · 需 cloudscraper）", expanded=False):
+    st.caption("FBref 提供真实射门/xG。注意：FBref 对数据中心 IP 常 403，本机/住宅 IP 通常可拉；"
+               "拉取后结果缓存、九维「射门效率」自动升级为真实，失败则保持 proxy、不影响其他预测。")
+    if action_button("🔄 拉取本场两队 FBref 射门/xG"):
+        with st.spinner("从 FBref 拉取射门/xG（限速较慢）…"):
+            for _t in (home, away):
+                try:
+                    _d = fbref_mod.fetch_team_shooting(_t)
+                    st.success(f"{zh(_t)}：进球 {_d.get('goals')} · 射门 {_d.get('shots')} · "
+                               f"xG {_d.get('xg')} · npxG {_d.get('npxg')}")
+                except fbref_mod.FBrefError as exc:
+                    st.warning(f"{zh(_t)} 拉取失败：{exc}")
+                except Exception as exc:
+                    st.warning(f"{zh(_t)} 拉取失败（可能缺 cloudscraper 或被 403）：{str(exc)[:120]}")
+        st.rerun()
+    _shoot_rows = []
+    for _t, _fin in [(home, _fin_h), (away, _fin_a)]:
+        _sd = fbref_mod.load_shooting(_t)
+        if _sd:
+            _shoot_rows.append({"球队": zh(_t), "进球": _sd.get("goals"), "射门": _sd.get("shots"),
+                                "射正": _sd.get("sot"), "xG": _sd.get("xg"), "npxG": _sd.get("npxg"),
+                                "射门效率分": (f"{_fin:.0f}" if _fin is not None else "—"),
+                                "更新": (_sd.get("updated_at") or "")[:10]})
+    if _shoot_rows:
+        st.dataframe(pd.DataFrame(_shoot_rows), hide_index=True, width="stretch")
+        st.caption("射门效率分由 转化率(进球/射门) + (进球−xG)/射门 的射手超预期折算 0-100；已并入上方九维度。")
+    else:
+        st.caption("尚无本场 FBref 缓存——点上方按钮拉取（结果缓存，再次查看不重复联网）。")
 
 
 with st.expander("🤖 AI 对话（结合本场全部已加载数据问答 / 粘贴材料分析）", expanded=False):

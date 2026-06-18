@@ -117,6 +117,7 @@ def predict(model, home: str, away: str, neutral: bool = True, *,
             group_state: dict | None = None, tank_risk: bool = False,
             home_formation: str | None = None, away_formation: str | None = None,
             squad_value_home: float | None = None, squad_value_away: float | None = None,
+            finishing_home: float | None = None, finishing_away: float | None = None,
             evidence: dict | None = None, env_report: dict | None = None) -> dict:
     """组合预测。返回 {matrix, exp_goals, base_exp_goals, adj_factors, notes,
     confidence, data_quality, tank_risk, dimensions}。"""
@@ -149,7 +150,8 @@ def predict(model, home: str, away: str, neutral: bool = True, *,
         model, home, away, evidence=ev,
         env_report=env_report or match_environment_report(home, away, matrix, fixture=fixture),
         group_state=group_state, neutral=neutral,
-        squad_value_home=squad_value_home, squad_value_away=squad_value_away)
+        squad_value_home=squad_value_home, squad_value_away=squad_value_away,
+        finishing_home=finishing_home, finishing_away=finishing_away)
     gap = abs(prof["score_home"] - prof["score_away"])
     confidence = _confidence(prof["data_quality"], gap, effective_tank)
 

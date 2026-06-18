@@ -32,6 +32,7 @@ def build_report(model, home: str, away: str, neutral: bool = True, *,
                  odds_1x2: dict | None = None, group_state: dict | None = None,
                  home_formation: str | None = None, away_formation: str | None = None,
                  squad_value_home: float | None = None, squad_value_away: float | None = None,
+                 finishing_home: float | None = None, finishing_away: float | None = None,
                  pred: dict | None = None) -> dict:
     """生成单场 MatchIntelligenceReport。odds_1x2 形如 {'home','draw','away'} 十进制赔率，可空。
 
@@ -40,7 +41,8 @@ def build_report(model, home: str, away: str, neutral: bool = True, *,
         pred = clemente.predict(model, home, away, neutral, fixtures=fixtures, fixture=fixture,
                                 group_state=group_state, home_formation=home_formation,
                                 away_formation=away_formation,
-                                squad_value_home=squad_value_home, squad_value_away=squad_value_away)
+                                squad_value_home=squad_value_home, squad_value_away=squad_value_away,
+                                finishing_home=finishing_home, finishing_away=finishing_away)
     mat = pred["matrix"]
     prof = pred["dimensions"]
     lam, mu = pred["exp_goals"]

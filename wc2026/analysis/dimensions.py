@@ -75,6 +75,8 @@ def nine_dimension_profile(
     group_state: dict | None = None,
     squad_value_home: float | None = None,
     squad_value_away: float | None = None,
+    finishing_home: float | None = None,
+    finishing_away: float | None = None,
     neutral: bool = True,
 ) -> dict:
     """计算两队九维度评分。
@@ -184,16 +186,21 @@ def nine_dimension_profile(
         float(aa) if aa is not None else 50.0,
         "environment 适应分", "real" if (ah is not None and aa is not None) else "degraded")
 
-    # 9) 射门效率：近况场均进球 + 进攻系数（proxy）
-    def finish(t: str, form: dict | None) -> float:
+    # 9) 射门效率：有 FBref 真实 xG/射门分则用真实，否则回退近况进球 + 进攻系数(proxy)
+    def finish_proxy(t: str, form: dict | None) -> float:
         base = atk_score(t)
         n = (form or {}).get("n", 0) or 0
         if n:
             gf_pg = (form.get("gf", 0) or 0) / n
             base = 0.6 * base + 0.4 * _clamp(gf_pg / 3.0 * 100.0)  # 3 球/场 ≈ 满分
         return base
-    add("finishing", finish(home, home_form), finish(away, away_form),
-        "近况进球 + DC attack", "proxy")
+    if finishing_home is not None or finishing_away is not None:
+        fh = finishing_home if finishing_home is not None else finish_proxy(home, home_form)
+        fa = finishing_away if finishing_away is not None else finish_proxy(away, away_form)
+        add("finishing", fh, fa, "FBref 射门/xG", "real")
+    else:
+        add("finishing", finish_proxy(home, home_form), finish_proxy(away, away_form),
+            "近况进球 + DC attack", "proxy")
 
     # 综合分（加权）与雷达兼容结构
     dims_home = {d["name"]: d["home"] for d in dims}
