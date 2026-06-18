@@ -27,13 +27,51 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _parse_utc(s):
+    """兼容 fixtures 的 '2026-06-11 19:00:00Z' 与 ISO '...+00:00'。失败返回 None。"""
+    if not s:
+        return None
+    t = str(s).strip().replace(" ", "T")
+    if t.endswith("Z"):
+        t = t[:-1] + "+00:00"
+    try:
+        d = datetime.fromisoformat(t)
+    except ValueError:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def _now_dt(now=None):
+    return _parse_utc(now) or datetime.now(timezone.utc)
+
+
+def match_phase(kickoff_utc, now=None, finished: bool = False) -> str:
+    """赛程阶段标签：T-7d / T-24h / T-2h / live / post（对应文档 §6 工作流节点）。"""
+    if finished:
+        return "post"
+    ko = _parse_utc(kickoff_utc)
+    if ko is None:
+        return "unknown"
+    hrs = (ko - _now_dt(now)).total_seconds() / 3600.0
+    if hrs <= 0:
+        return "live"
+    if hrs <= 2:
+        return "T-2h"
+    if hrs <= 24:
+        return "T-24h"
+    if hrs <= 24 * 7:
+        return "T-7d"
+    return "pre"
+
+
 def build_report(model, home: str, away: str, neutral: bool = True, *,
                  fixture: dict | None = None, fixtures: list | None = None,
                  odds_1x2: dict | None = None, group_state: dict | None = None,
                  home_formation: str | None = None, away_formation: str | None = None,
                  squad_value_home: float | None = None, squad_value_away: float | None = None,
                  finishing_home: float | None = None, finishing_away: float | None = None,
-                 pred: dict | None = None) -> dict:
+                 pred: dict | None = None, now: str | None = None,
+                 lineup_meta: dict | None = None, key_change_risks: list | None = None) -> dict:
     """生成单场 MatchIntelligenceReport。odds_1x2 形如 {'home','draw','away'} 十进制赔率，可空。
 
     pred 可传入已算好的 clemente.predict 结果（单场页复用，避免重复计算）。"""
@@ -59,9 +97,14 @@ def build_report(model, home: str, away: str, neutral: bool = True, *,
         },
         "prediction": _prediction_block(markets, lam, mu, pred),
         "market_check": _market_check_block(x, odds_1x2),
-        "risks": _risk_block(model, home, away, x, pred, prof),
+        "risks": _risk_block(model, home, away, x, pred, prof, fixture=fixture,
+                             now=now, lineup_meta=lineup_meta, key_change_risks=key_change_risks),
         "confidence": pred["confidence"],
         "notes": pred["notes"],
+        "phase": match_phase((fixture or {}).get("date_utc"), now,
+                             finished=bool((fixture or {}).get("home_score") is not None)),
+        "lineup": lineup_meta or {"source": "未接入官方首发", "confidence": "estimated",
+                                  "note": "当前仅有基于身价的预计首发；官方首发无免费 API，待赛前替代源确认"},
         "summary": None,  # 下面填
         "generated_at": _now(),
     }
@@ -138,8 +181,45 @@ def _market_check_block(model_1x2: dict, odds: dict | None) -> dict:
             "note": "赔率仅作验证参考，不影响上方预测结论。", "items": items}
 
 
-def _risk_block(model, home, away, model_1x2, pred, prof) -> list[dict]:
-    """分级风险：高/中/低。汇总控分、爆冷、数据不足、体能、临场等。"""
+def _live_variable_risk(fixture, now, lineup_meta) -> dict:
+    """临场变量风险：随距开赛时间收紧，并反映首发数据可信度与时间戳（文档 §5.6 / §6.3）。"""
+    f = fixture or {}
+    finished = f.get("home_score") is not None
+    phase = match_phase(f.get("date_utc"), now, finished=finished)
+    lm = lineup_meta or {}
+    confirmed = lm.get("confidence") == "confirmed"
+    src = lm.get("source") or "预计首发（身价估计）"
+    stamp_s = f"，数据时间 {lm['updated_at']}" if lm.get("updated_at") else ""
+
+    if phase in ("post", "live"):
+        return {"level": "低", "tag": "临场变量",
+                "detail": f"比赛已开始/结束；首发以实际为准（{src}{stamp_s}）", "sources": ["赛程时钟"]}
+    ko = _parse_utc(f.get("date_utc"))
+    hrs = None if ko is None else max(0.0, (ko - _now_dt(now)).total_seconds() / 3600.0)
+    hrs_s = "" if hrs is None else f"距开赛约 {hrs:.0f} 小时，"
+    if phase == "T-2h":
+        if confirmed:
+            return {"level": "低", "tag": "临场首发",
+                    "detail": f"{hrs_s}官方/确认首发已就位（{src}{stamp_s}）；最后调整以现场为准",
+                    "sources": [src]}
+        return {"level": "中", "tag": "临场首发未确认",
+                "detail": f"{hrs_s}仍为{src}，官方首发尚未确认{stamp_s}；开赛前应强制刷新，"
+                          "关键缺阵可能改变结论", "sources": [src]}
+    if phase == "T-24h":
+        return {"level": "中" if not confirmed else "低", "tag": "临场变量",
+                "detail": f"{hrs_s}首发/伤停/天气未最终确定（{src}{stamp_s}）；建议 T-2h 再次刷新",
+                "sources": [src]}
+    return {"level": "低", "tag": "临场变量",
+            "detail": f"{hrs_s}距开赛较远，首发/天气以赛前官方为准（{src}{stamp_s}）；"
+                      "本报告未纳入实时官方名单，临近开赛请刷新确认", "sources": [src]}
+
+
+def _risk_block(model, home, away, model_1x2, pred, prof, *, fixture=None,
+                now=None, lineup_meta=None, key_change_risks=None) -> list[dict]:
+    """分级风险：高/中/低。汇总控分、爆冷、数据不足、体能、临场等。
+
+    临场变量按距开赛时间 + 首发数据等级动态分级；key_change_risks 为临场刷新检出的
+    关键变化（伤停/首发/赔率异动），已分级，直接并入。"""
     risks: list[dict] = []
 
     # 爆冷（把热门当稳胆的风险）
@@ -174,10 +254,12 @@ def _risk_block(model, home, away, model_1x2, pred, prof) -> list[dict]:
     for n in fat_notes:
         risks.append({"level": "低", "tag": "体能/旅行", "detail": n, "sources": ["赛程+场馆地理"]})
 
-    # 临场首发/伤停（静态提示，需赛前刷新）
-    risks.append({"level": "低", "tag": "临场变量",
-                  "detail": "首发/伤停/天气以赛前官方为准；本报告未纳入实时官方名单，开赛前请刷新确认",
-                  "sources": ["静态提示"]})
+    # 临场首发/伤停/天气：按距开赛时间 + 首发数据等级动态分级
+    risks.append(_live_variable_risk(fixture, now, lineup_meta))
+
+    # 临场刷新检出的关键变化（伤停/首发/赔率异动）→ 已分级，直接并入
+    for kr in (key_change_risks or []):
+        risks.append(kr)
     return risks
 
 

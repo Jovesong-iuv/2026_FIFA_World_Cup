@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 from wc2026 import auth
 from wc2026.config import settings
@@ -483,6 +484,214 @@ def render_top_nav(page_options: list[str]) -> str:
         page = st.radio("页面", page_options, horizontal=True, label_visibility="collapsed",
                         key="top_page_nav")
     return page
+
+
+def render_bridge_dashboard(payload: dict) -> None:
+    """Embed the reference-style HTML dashboard with current project data."""
+    import json
+    data_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+    html = f"""
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {{
+  --bg:#0a0e1a; --glass:rgba(255,255,255,.055); --line:rgba(255,255,255,.10);
+  --text:#f1f5f9; --muted:#94a3b8; --dim:#64748b;
+  --blue:#3b82f6; --red:#ef4444; --gold:#f59e0b; --green:#10b981;
+}}
+* {{ box-sizing:border-box; }}
+body {{
+  margin:0; font-family:-apple-system,BlinkMacSystemFont,"Noto Sans SC","Segoe UI",sans-serif;
+  color:var(--text);
+  background:radial-gradient(circle at 20% 20%,rgba(59,130,246,.16),transparent 34%),
+             radial-gradient(circle at 82% 12%,rgba(139,92,246,.16),transparent 30%),
+             linear-gradient(135deg,#070b14,#172044 48%,#211033);
+}}
+.wrap {{ padding:22px; }}
+.card {{
+  border:1px solid var(--line); border-radius:18px; background:var(--glass);
+  backdrop-filter:blur(18px); box-shadow:0 20px 60px rgba(0,0,0,.28); margin-bottom:18px;
+}}
+.title {{ display:flex; justify-content:space-between; gap:12px; align-items:flex-end; padding:18px 20px 0; }}
+.title h2 {{ margin:0; font-size:20px; }}
+.title p {{ margin:4px 0 0; color:var(--muted); font-size:13px; }}
+.team-card {{ display:grid; grid-template-columns:1fr 96px 1fr; gap:26px; padding:28px 34px; }}
+.side {{ min-width:0; }}
+.hero-team {{ text-align:center; margin-bottom:22px; }}
+.flag {{ font-size:48px; line-height:1; }}
+.name {{ font-size:24px; font-weight:900; margin-top:8px; }}
+.score {{ font-size:54px; line-height:1; margin-top:14px; font-weight:950; }}
+.score.blue {{ color:var(--blue); }} .score.red {{ color:var(--red); }}
+.score-label {{ color:var(--dim); font-weight:700; margin-top:8px; }}
+.vs {{ display:grid; place-items:center; color:var(--red); font-size:42px; font-weight:950; }}
+.info-row {{ display:grid; grid-template-columns:112px 1fr; gap:12px; padding:10px 0; border-bottom:1px solid rgba(255,255,255,.07); }}
+.info-row .label {{ color:var(--dim); font-weight:800; }}
+.info-row .value {{ color:var(--muted); text-align:right; font-weight:700; line-height:1.45; }}
+.records {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:0 20px 20px; }}
+.record-box {{ padding:16px; border-radius:14px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); }}
+.record-top {{ display:flex; justify-content:space-between; gap:10px; align-items:center; }}
+.zone {{ padding:4px 9px; border-radius:999px; font-size:12px; font-weight:900; }}
+.zone.advance {{ background:rgba(16,185,129,.18); color:#7bf7c5; }}
+.zone.pending {{ background:rgba(245,158,11,.18); color:#ffd58a; }}
+.zone.risk {{ background:rgba(239,68,68,.18); color:#ffaaa9; }}
+.record-stats {{ display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:14px; text-align:center; }}
+.record-stats b {{ display:block; font-size:20px; }}
+.record-stats span {{ color:var(--dim); font-size:12px; }}
+.recent {{ margin-top:12px; color:var(--muted); font-size:13px; line-height:1.7; }}
+.grid2 {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; padding:20px; }}
+.radar-wrap {{ display:grid; place-items:center; min-height:340px; }}
+canvas {{ max-width:100%; }}
+.bars {{ padding:12px 6px; }}
+.bar-row {{ margin-bottom:10px; }}
+.bar-head {{ display:flex; justify-content:space-between; color:var(--muted); font-size:12px; margin-bottom:4px; }}
+.bar-track {{ display:flex; height:24px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.05); }}
+.bar-a {{ background:linear-gradient(90deg,rgba(59,130,246,.35),rgba(59,130,246,.85)); display:grid; place-items:center; font-size:11px; font-weight:900; }}
+.bar-b {{ background:linear-gradient(90deg,rgba(239,68,68,.85),rgba(239,68,68,.35)); display:grid; place-items:center; font-size:11px; font-weight:900; }}
+.prob-grid {{ display:grid; grid-template-columns:330px 1fr; gap:18px; padding:20px; }}
+.donut {{ position:relative; display:grid; place-items:center; min-height:260px; }}
+.donut-center {{ position:absolute; text-align:center; pointer-events:none; }}
+.donut-center b {{ font-size:30px; }}
+.matrix {{ display:grid; grid-template-columns:34px repeat(8,1fr); gap:3px; }}
+.cell {{ min-height:32px; border-radius:5px; display:grid; place-items:center; color:#dbeafe; font-size:11px; font-weight:800; }}
+.axis {{ color:var(--muted); font-size:11px; display:grid; place-items:center; }}
+.guide {{ padding:0 20px 20px; }}
+.guide-list {{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }}
+.guide-item {{ border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:14px; text-align:center; background:rgba(255,255,255,.035); }}
+.guide-item.reco {{ border-color:rgba(245,158,11,.45); background:rgba(245,158,11,.10); box-shadow:0 0 30px rgba(245,158,11,.08); }}
+.guide-item .s {{ font-size:28px; font-weight:950; }}
+.guide-item .p {{ color:var(--muted); font-size:13px; }}
+.odds {{ padding:20px; overflow:auto; }}
+table {{ width:100%; border-collapse:collapse; }}
+th,td {{ padding:11px 10px; border-bottom:1px solid rgba(255,255,255,.07); text-align:left; white-space:nowrap; }}
+th {{ color:var(--dim); font-size:12px; }}
+.dev-pos {{ color:#7bf7c5; font-weight:900; }} .dev-neg {{ color:#ffaaa9; font-weight:900; }} .dev-neu {{ color:var(--muted); font-weight:900; }}
+.summary {{ display:grid; grid-template-columns:1.3fr 1fr; gap:18px; padding:20px; }}
+.note {{ color:var(--muted); line-height:1.8; }}
+.risk {{ border-left:3px solid var(--gold); padding:8px 0 8px 12px; color:var(--muted); margin:8px 0; }}
+.champ {{ padding:20px; }}
+.champ-row {{ display:grid; grid-template-columns:36px 1fr 80px; gap:10px; align-items:center; margin:10px 0; }}
+.champ-bar {{ height:10px; border-radius:999px; background:rgba(255,255,255,.06); overflow:hidden; }}
+.champ-fill {{ height:100%; background:linear-gradient(90deg,var(--blue),var(--gold)); border-radius:999px; }}
+@media(max-width:760px) {{
+  .wrap {{ padding:12px; }} .team-card,.grid2,.prob-grid,.records,.summary {{ grid-template-columns:1fr; padding:16px; }}
+  .vs {{ display:none; }} .score {{ font-size:44px; }} .info-row {{ grid-template-columns:92px 1fr; }}
+  .guide-list {{ grid-template-columns:1fr; }}
+}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="app"></div>
+</div>
+<script>
+const DATA = {data_json};
+const $ = s => document.querySelector(s);
+const pct = (v, d=1) => ((v || 0) * 100).toFixed(d) + '%';
+function zoneClass(z) {{ return z.includes('32') ? 'advance' : (z.includes('待定') ? 'pending' : 'risk'); }}
+function esc(x) {{ return String(x ?? '—').replace(/[&<>"]/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c])); }}
+function infoRows(t) {{
+  const rankLabel = (t.rank_source || 'FIFA') + '排名';
+  const rows = [
+    [rankLabel, t.fifa_rank ? '#' + t.fifa_rank : '—'], ['人口', t.population], ['世界杯届数', t.wc_appearances],
+    ['最佳成绩', t.best_achievement], ['阵型', t.formation], ['风格', t.style_detail],
+    ['背景', t.background], ['首发阵容', t.starting_lineup], ['训练基地', t.training_base]
+  ];
+  return rows.map(r => `<div class="info-row"><span class="label">${{esc(r[0])}}</span><span class="value">${{esc(r[1])}}</span></div>`).join('');
+}}
+function recordBox(t) {{
+  const r = t.current_record || {{}};
+  const recent = (r.recent || []).map(x => `${{x.date}} vs ${{x.opponent_cn}} ${{x.score}}(${{x.result}})`).join(' · ') || '本届暂无已完赛记录';
+  return `<div class="record-box">
+    <div class="record-top"><b>${{t.flag}} ${{t.name_cn}} · ${{r.group || '小组'}}</b><span class="zone ${{zoneClass(r.zone || '')}}">${{r.zone || '待定区'}}</span></div>
+    <div class="record-stats">
+      <div><b>${{r.played || 0}}</b><span>赛</span></div><div><b>${{r.w || 0}}</b><span>胜</span></div>
+      <div><b>${{r.d || 0}}</b><span>平</span></div><div><b>${{r.l || 0}}</b><span>负</span></div>
+      <div><b>${{r.gf || 0}}/${{r.ga || 0}}</b><span>进/失</span></div>
+    </div>
+    <div class="recent">积分 ${{r.pts || 0}} · 排名 ${{r.rank || '—'}} · 近期：${{esc(recent)}}</div>
+  </div>`;
+}}
+function renderTeamComparison() {{
+  const h = DATA.teams.home, a = DATA.teams.away;
+  return `<div class="card">
+    <div class="title"><div><h2>球队对比卡</h2><p>当前项目数据优先，缺口用静态 team_profiles.json 补齐</p></div></div>
+    <div class="team-card">
+      <div class="side"><div class="hero-team"><div class="flag">${{h.flag}}</div><div class="name">${{h.name_cn}}</div><div class="score blue">${{(h.score/10).toFixed(1)}}</div><div class="score-label">综合评分</div></div>${{infoRows(h)}}</div>
+      <div class="vs">VS</div>
+      <div class="side"><div class="hero-team"><div class="flag">${{a.flag}}</div><div class="name">${{a.name_cn}}</div><div class="score red">${{(a.score/10).toFixed(1)}}</div><div class="score-label">综合评分</div></div>${{infoRows(a)}}</div>
+    </div>
+    <div class="records">${{recordBox(h)}}${{recordBox(a)}}</div>
+  </div>`;
+}}
+function renderDimensions() {{
+  const dims = DATA.dimensions, keys = Object.keys(dims.team_a || {{}});
+  const bars = keys.map(k => {{
+    const va = dims.team_a[k] || 5, vb = dims.team_b[k] || 5, total = va + vb || 1;
+    const pa = Math.round(va / total * 100), pb = 100 - pa;
+    return `<div class="bar-row"><div class="bar-head"><span>${{dims.labels[k] || k}} (${{dims.weights[k] || 0}}%)</span><span>${{va.toFixed(1)}} / ${{vb.toFixed(1)}}</span></div><div class="bar-track"><div class="bar-a" style="width:${{pa}}%">${{pa}}%</div><div class="bar-b" style="width:${{pb}}%">${{pb}}%</div></div></div>`;
+  }}).join('');
+  return `<div class="card"><div class="title"><div><h2>九维度能力对比</h2><p>雷达图 + 对抗条形图</p></div></div><div class="grid2"><div class="radar-wrap"><canvas id="radar" width="330" height="330"></canvas></div><div class="bars">${{bars}}</div></div></div>`;
+}}
+function matrixHtml() {{
+  const la = DATA.prediction.lambda_a, lb = DATA.prediction.lambda_b;
+  function poisson(k,l) {{ let r=Math.exp(-l); for(let i=1;i<=k;i++) r*=l/i; return r; }}
+  let html = '<div class="matrix"><div></div>';
+  for(let j=0;j<=7;j++) html += `<div class="axis">${{j}}</div>`;
+  for(let i=0;i<=7;i++) {{
+    html += `<div class="axis">${{i}}</div>`;
+    for(let j=0;j<=7;j++) {{
+      const p = poisson(i,la)*poisson(j,lb), inten = Math.min(p*22,1);
+      const c = i>j ? `rgba(59,130,246,${{.15+inten*.6}})` : (i===j ? `rgba(245,158,11,${{.15+inten*.6}})` : `rgba(239,68,68,${{.15+inten*.6}})`);
+      html += `<div class="cell" style="background:${{c}}" title="${{i}}-${{j}}">${{(p*100).toFixed(1)}}%</div>`;
+    }}
+  }}
+  return html + '</div>';
+}}
+function renderPrediction() {{
+  const p = DATA.prediction, top = p.top_scorelines || [];
+  const guides = top.map((s,i)=>`<div class="guide-item ${{i===0?'reco':''}}"><div>${{i===0?'⭐ 推荐':'参考'}}</div><div class="s">${{s.score}}</div><div class="p">${{pct(s.probability)}}</div></div>`).join('');
+  return `<div class="card"><div class="title"><div><h2>胜平负 / 比分矩阵 / 指导比分</h2><p>Dixon-Coles 组合模型 · λ ${{p.lambda_a.toFixed(2)}} : ${{p.lambda_b.toFixed(2)}}</p></div></div><div class="prob-grid"><div class="donut"><canvas id="donut" width="260" height="260"></canvas><div class="donut-center"><b>${{top[0]?.score || '—'}}</b><br><span>最可能比分</span></div></div><div>${{matrixHtml()}}</div></div><div class="guide"><div class="guide-list">${{guides}}</div></div></div>`;
+}}
+function renderOdds() {{
+  const rows = Object.entries(DATA.odds_validation || {{}}).map(([k,o]) => {{
+    const dev = o.deviation;
+    const cls = dev == null ? 'dev-neu' : (dev > 8 ? 'dev-pos' : (dev < -8 ? 'dev-neg' : 'dev-neu'));
+    return `<tr><td>${{k}}</td><td>${{o.market_odds ? o.market_odds.toFixed(2) : '—'}}</td><td>${{pct(o.model_prob)}}</td><td>${{o.implied_prob == null ? '—' : pct(o.implied_prob)}}</td><td class="${{cls}}">${{dev == null ? o.label : (dev>0?'+':'') + dev.toFixed(1) + '%'}}</td></tr>`;
+  }}).join('');
+  return `<div class="card odds"><h2>赔率偏差颜色编码</h2><table><thead><tr><th>市场</th><th>赔率</th><th>模型概率</th><th>市场隐含</th><th>偏差</th></tr></thead><tbody>${{rows}}</tbody></table><p class="note">绿色=潜在价值，红色=市场高估，灰色=基本一致；赔率只做后验验证，不改写预测。</p></div>`;
+}}
+function renderSummary() {{
+  const s = DATA.summary || {{}}, risks = DATA.risks || [];
+  return `<div class="card"><div class="title"><div><h2>分析总结与风险提示</h2><p>保留当前项目逐场详情核心解释</p></div></div><div class="summary"><div class="note">${{esc(s.text || '')}}</div><div>${{risks.map(r=>`<div class="risk"><b>[${{r.level}}] ${{r.tag}}</b><br>${{esc(r.detail)}}</div>`).join('')}}</div></div></div>`;
+}}
+function renderChampion() {{
+  const rows = (DATA.championship_odds || []).slice(0,10);
+  const max = rows[0]?.champion || 1;
+  return `<div class="card champ"><h2>夺冠概率排名</h2>${{rows.map((r,i)=>`<div class="champ-row"><div>${{i+1}}</div><div><b>${{r.flag}} ${{r.team_cn}}</b><div class="champ-bar"><div class="champ-fill" style="width:${{Math.max(2,r.champion/max*100)}}%"></div></div></div><div>${{pct(r.champion,1)}}</div></div>`).join('')}}</div>`;
+}}
+function drawRadar() {{
+  const c = $('#radar'); if(!c) return; const ctx=c.getContext('2d'), W=c.width,H=c.height,cx=W/2,cy=H/2,R=120;
+  const dims=DATA.dimensions, keys=Object.keys(dims.team_a||{{}}), labels=keys.map(k=>dims.labels[k]||k);
+  ctx.clearRect(0,0,W,H); ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.fillStyle='rgba(148,163,184,.9)'; ctx.font='11px sans-serif';
+  for(let ring=1;ring<=5;ring++) {{ ctx.beginPath(); for(let i=0;i<keys.length;i++) {{ const a=-Math.PI/2+i*2*Math.PI/keys.length, r=R*ring/5; const x=cx+Math.cos(a)*r,y=cy+Math.sin(a)*r; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }} ctx.closePath(); ctx.stroke(); }}
+  labels.forEach((l,i)=>{{ const a=-Math.PI/2+i*2*Math.PI/keys.length; ctx.fillText(l,cx+Math.cos(a)*(R+24)-24,cy+Math.sin(a)*(R+24)); }});
+  function poly(vals,color,fill) {{ ctx.beginPath(); keys.forEach((k,i)=>{{ const a=-Math.PI/2+i*2*Math.PI/keys.length,r=R*(vals[k]||5)/10,x=cx+Math.cos(a)*r,y=cy+Math.sin(a)*r; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }}); ctx.closePath(); ctx.fillStyle=fill; ctx.strokeStyle=color; ctx.lineWidth=2; ctx.fill(); ctx.stroke(); }}
+  poly(dims.team_a,'#3b82f6','rgba(59,130,246,.18)'); poly(dims.team_b,'#ef4444','rgba(239,68,68,.16)');
+}}
+function drawDonut() {{
+  const c=$('#donut'); if(!c) return; const ctx=c.getContext('2d'), p=DATA.prediction, vals=[p.team_a_win_prob,p.draw_prob,p.team_b_win_prob], cols=['#3b82f6','#f59e0b','#ef4444'];
+  let start=-Math.PI/2; vals.forEach((v,i)=>{{ ctx.beginPath(); ctx.moveTo(130,130); ctx.arc(130,130,112,start,start+v*Math.PI*2); ctx.closePath(); ctx.fillStyle=cols[i]; ctx.fill(); start+=v*Math.PI*2; }}); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(130,130,72,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over';
+}}
+$('#app').innerHTML = renderTeamComparison()+renderDimensions()+renderPrediction()+renderOdds()+renderSummary()+renderChampion();
+drawRadar(); drawDonut();
+</script>
+</body>
+</html>
+"""
+    components.html(html, height=1850, scrolling=True)
 
 
 def require_login() -> dict:
@@ -1029,23 +1238,27 @@ def _standings_table_html(group: str, rows: list[dict], state: dict | None = Non
     state = state or {}
     head = (f'<div style="display:inline-block;background:#2563eb;color:#fff;padding:2px 10px;'
             f'border-radius:6px;font-weight:700;margin-bottom:8px;">{group} 积分榜</div>')
-    cols = ["#", "球队", "赛", "胜", "平", "负", "进", "失", "净", "分"]
+    cols = ["#", "球队", "赛", "胜", "平", "负", "进", "失", "净", "分", "区域"]
     thead = "<tr>" + "".join(
         f'<th style="padding:2px 4px;text-align:center;color:var(--wc-muted);font-weight:600;">{c}</th>'
         for c in cols) + "</tr>"
     body = ""
     for r in rows:
         bar = "#16a34a" if r["rank"] <= 2 else ("#d97706" if r["rank"] == 3 else "transparent")
+        bg = "rgba(22,163,74,.20)" if r["rank"] <= 2 else (
+            "rgba(217,119,6,.18)" if r["rank"] == 3 else "rgba(239,68,68,.07)")
+        zone = "晋级32强区" if r["rank"] <= 2 else ("晋级待定区" if r["rank"] == 3 else "淘汰风险区")
         s = state.get(r["team"], "alive")
         tag = ("" if s == "alive"
                else f'<span style="font-size:10px;color:var(--wc-muted);margin-left:4px;">{STATUS_LABEL[s]}</span>')
-        tds = [f'<td style="text-align:center;border-left:3px solid {bar};padding:2px 4px;">{r["rank"]}</td>',
+        tds = [f'<td style="text-align:center;border-left:3px solid {bar};padding:4px 4px;">{r["rank"]}</td>',
                f'<td style="padding:2px 4px;white-space:nowrap;">{zh(r["team"])}{tag}</td>']
         tds += [f'<td style="text-align:center;padding:2px 4px;">{r[k]}</td>'
                 for k in ("played", "w", "d", "l", "gf", "ga")]
         tds.append(f'<td style="text-align:center;padding:2px 4px;">{r["gd"]:+d}</td>')
         tds.append(f'<td style="text-align:center;padding:2px 4px;font-weight:700;">{r["pts"]}</td>')
-        body += "<tr>" + "".join(tds) + "</tr>"
+        tds.append(f'<td style="text-align:right;padding:2px 4px;color:{bar};font-size:11px;font-weight:700;">{zone}</td>')
+        body += f'<tr style="background:{bg};">' + "".join(tds) + "</tr>"
     return (f'<div style="border:1px solid var(--wc-line);border-radius:10px;padding:10px 12px;'
             f'margin-bottom:14px;background:var(--wc-surface);">{head}'
             f'<table style="width:100%;border-collapse:collapse;font-size:12px;">'
@@ -1572,6 +1785,68 @@ def render_bold_predictions(model) -> None:
     )
 
 
+def render_audit(model) -> None:
+    """赛后复盘页：模型预测 vs 市场赔率 vs 实际赛果（文档 §6.4 / §11.3）。"""
+    from wc2026.analysis import audit as _audit
+    from wc2026.analysis.imminent import load_all_prematch_snapshots
+    section_title("赛后复盘：模型 vs 市场 vs 实际")
+    if not fixtures:
+        st.warning("暂无赛程数据（需先刷新 2026 赛程）。")
+        return
+    summary = _audit.audit_summary(model, fixtures, snapshots=load_all_prematch_snapshots())
+    if summary["n_finished"] == 0:
+        st.info("还没有已完赛的小组赛可供复盘。开赛并回填比分后，"
+                "这里会逐场对比模型与市场的命中/偏差。")
+        return
+
+    mm = summary["model_metrics"]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("已复盘场次", summary["n_finished"])
+    c2.metric("模型命中率", f"{mm['accuracy']:.0%}")
+    c3.metric("模型 LogLoss", f"{mm['log_loss']:.3f}")
+    c4.metric("模型 Brier", f"{mm['brier']:.3f}")
+    st.caption(f"LogLoss < 基准 {mm['baseline_log_loss']:.3f}（三分类瞎猜）即有预测力；"
+               f"其中赛前锁定快照 {summary['n_with_snapshot']}/{summary['n_finished']} 场，"
+               "其余为事后复算（当前模型已含赛果，仅参考）。")
+
+    cmp = summary["comparison"]
+    if cmp.get("enabled"):
+        st.markdown("**模型 vs 市场（赔率基准）**")
+        _lab = {"log_loss": "LogLoss（越低越好）", "brier": "Brier（越低越好）",
+                "accuracy": "命中率（越高越好）"}
+        rows = []
+        for k in ("log_loss", "brier", "accuracy"):
+            d = cmp[k]
+            fmt = (lambda v: f"{v:.0%}") if k == "accuracy" else (lambda v: f"{v:.3f}")
+            rows.append({"指标": _lab[k], "模型": fmt(d["model"]),
+                         "市场": fmt(d["market"]), "更优方": d["better"]})
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+        st.caption(f"基于 {cmp['n']} 场有赛前赔率快照的比赛（文档 §11.3：赔率验证偏差与实际结果）。")
+    else:
+        st.caption("市场对比：暂无赛前赔率快照（需在赛前用 The Odds API 拉取入库），当前仅展示模型表现。")
+
+    st.markdown("**逐场对比**")
+    table = []
+    for a in summary["matches"]:
+        m, mk = a["model"], a["market"]
+        table.append({
+            "比赛": f"{a['match']['home_cn']} vs {a['match']['away_cn']}",
+            "比分": a["match"]["score"], "实际": a["actual_cn"],
+            "模型预测": f"{m['pick_cn']} {m['probs'][m['pick']]:.0%}",
+            "模型": "✅" if m["hit"] else "❌",
+            "市场预测": (mk["pick_cn"] if mk.get("enabled") else "—"),
+            "市场": (("✅" if mk["hit"] else "❌") if mk.get("enabled") else "—"),
+            "数据": "锁定" if m["source"] == "赛前锁定快照" else "复算",
+        })
+    st.dataframe(pd.DataFrame(table), hide_index=True, width="stretch")
+
+    with st.expander("命中 / 偏差详解", expanded=False):
+        for a in summary["matches"]:
+            st.markdown(f"- **{a['match']['home_cn']} {a['match']['score']} "
+                        f"{a['match']['away_cn']}**：{a['verdict']}")
+    st.caption(summary["note"])
+
+
 inject_design_system()
 user = require_login()
 require_view_access()  # 访问口令墙：设了 ACCESS_PASSWORD 才生效；管理员 ?owner= 免口令
@@ -1595,7 +1870,7 @@ render_hero(
     "比分概率、盘口价值、串关组合与证据分析集中在一个可操作界面中。模型结论仅供参考，请理性参与并遵守当地法规。",
 )
 
-page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "大胆预测", "串关组合"]
+page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "大胆预测", "赛后复盘", "串关组合"]
 if is_owner():
     page_options.append("访问记录")
     page_options.append("投注台账")
@@ -1627,6 +1902,9 @@ if page == "小组出线":
     st.stop()
 if page == "大胆预测":
     render_bold_predictions(model)
+    st.stop()
+if page == "赛后复盘":
+    render_audit(model)
     st.stop()
 if page == "用户管理":
     render_user_management()
@@ -1931,6 +2209,20 @@ for _r in _report["risks"]:
         f'<span style="color:var(--wc-muted);"> — {_r["detail"]}</span></div>',
         unsafe_allow_html=True)
 st.caption("风险分级：高=可能改变结论或需重算情境；中=影响置信度；低=背景提示。首发/伤停/天气以赛前官方为准、赛前请刷新。")
+
+section_title("可视化大屏 Beta")
+from wc2026.analysis import dashboard_bridge as _bridge
+_bridge_payload = _bridge.build_dashboard_payload(
+    model, home, away, neutral,
+    fixture=selected_fixture,
+    fixtures=fixtures,
+    odds_1x2={"home": odds["home"], "draw": odds["draw"], "away": odds["away"]},
+    group_state=_cl_group_state,
+    pred=cl,
+)
+with st.expander("打开参考项目风格大屏（HTML / Canvas 桥接版）", expanded=True):
+    st.caption("数据来自当前 Python 模型与 FastAPI 契约；UI 参考给到项目的玻璃态暗色仪表盘。人口/最佳成绩等静态资料来自 data/team_profiles.json。")
+    render_bridge_dashboard(_bridge_payload)
 
 section_title("各市场概率")
 half_full = derive.half_full_time(lam, mu)

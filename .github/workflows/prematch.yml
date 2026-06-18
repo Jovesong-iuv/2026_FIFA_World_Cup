@@ -1,0 +1,48 @@
+name: Prematch lock (T-2h snapshots)
+
+# 每小时锁定进入 T-window 的比赛「赛前快照」，提交 data/prematch_snapshots.json，
+# 让线上单场页 / 赛后复盘能用真正的赛前锁定值（而非事后复算）做模型 vs 市场 vs 实际对比。
+# 独立于每日 refresh.yml，互不影响。
+#
+# ⚠️ 该工作流每小时用 GITHUB_TOKEN 自动 commit & push（仅 data/prematch_snapshots.json）。
+#    启用前确认：仓库 Settings → Actions → Workflow permissions 允许 "Read and write"。
+#    若不想自动锁定/推送，删除下面 schedule 段（保留 workflow_dispatch 可手动触发），
+#    或直接删除本文件。ODDS_API_KEY 为可选 secret，缺失时市场后验降级、不阻塞锁定。
+
+on:
+  schedule:
+    - cron: "23 * * * *"   # 每小时 :23（错开整点与每日刷新 06:17）
+  workflow_dispatch:
+    inputs:
+      window_hours:
+        description: "锁定窗口（小时）"
+        default: "3"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prematch
+  cancel-in-progress: false
+
+jobs:
+  prematch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Lock imminent prematch snapshots
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python scripts/refresh_imminent.py "${{ github.event.inputs.window_hours || '3' }}"
+      - name: Commit prematch snapshots
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/prematch_snapshots.json 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "chore: lock prematch snapshots [skip ci]"
+          git push
