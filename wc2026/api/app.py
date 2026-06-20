@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from wc2026.analysis import evidence
 from wc2026.config import settings
@@ -375,3 +376,29 @@ def value_scan(neutral: bool = True, blend: float = 0.5) -> dict:
     for r in scan:
         r["home_zh"], r["away_zh"] = zh(r["home"]), zh(r["away"])
     return {"value_bets": scan, "n_matches": len(odds_map)}
+
+
+class ChatRequest(BaseModel):
+    question: str
+    history: list[dict] | None = None
+    focus_team: str | None = None
+    focus_group: str | None = None
+
+
+@app.post("/chat")
+def chat_ep(req: ChatRequest) -> dict:
+    """全局赛事 AI 对话：统筹夺冠概率 / 各组形势 / 模型校准 / 偏差案例回答宏观问题。
+
+    需配置 LLM（LLM_API_KEY）。无状态多轮：history 由调用方携带。
+    focus_team（队名，自动归一化）/ focus_group（组名）可选，触发该对象的深挖上下文。
+    """
+    from wc2026.analysis.imminent import load_all_prematch_snapshots
+    from wc2026.llm import tournament_chat
+    model = get_model()
+    _, fixtures = _load_fixtures()
+    focus_team = to_lib(req.focus_team) if req.focus_team else None
+    ctx = tournament_chat.build_global_context(
+        model, fixtures=fixtures, focus_team=focus_team, focus_group=req.focus_group,
+        snapshots=load_all_prematch_snapshots())
+    ans = tournament_chat.ask(req.question, ctx, history=req.history)
+    return {"answer": ans["text"], "source": ans["source"]}

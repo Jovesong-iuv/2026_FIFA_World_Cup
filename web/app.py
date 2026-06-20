@@ -1847,6 +1847,67 @@ def render_audit(model) -> None:
     st.caption(summary["note"])
 
 
+def render_global_chat(model) -> None:
+    """AI 分析师：统筹全局数据的赛事级问答（夺冠概率 / 各组形势 / 模型校准 / 偏差）。"""
+    from wc2026.analysis import audit as _audit, dashboard_bridge as _db
+    from wc2026.analysis.imminent import load_all_prematch_snapshots
+    from wc2026.llm import tournament_chat
+    section_title("AI 分析师：统筹全局问答")
+    if not fixtures:
+        st.warning("暂无赛程数据（需先刷新 2026 赛程）。")
+        return
+
+    # 赛事总览（所有人可见）
+    snaps = load_all_prematch_snapshots()
+    summ = _audit.audit_summary(model, fixtures, snapshots=snaps)
+    champ = _db._championship_payload(model)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("可预测场次", len(fixtures))
+    c2.metric("已复盘", summ["n_finished"])
+    c3.metric("模型命中率", f"{summ['model_metrics']['accuracy']:.0%}" if summ["n_finished"] else "—")
+    c4.metric("夺冠热门", f"{zh(champ[0]['team'])} {champ[0]['champion']:.0%}" if champ else "—")
+    if champ:
+        st.caption("夺冠 Top5：" + " · ".join(f"{zh(c['team'])} {c['champion']:.0%}" for c in champ[:5]))
+
+    if not llm_configured():
+        st.info("需接入 LLM（在 .env 配置 LLM_API_KEY）后可对话；当前未配置。")
+        return
+    if not is_owner():
+        st.caption("🔒 AI 对话仅所有者可用（会消耗 LLM token）；以上总览访客可见。")
+        return
+
+    teams = sorted({f["home_team"] for f in fixtures} | {f["away_team"] for f in fixtures})
+    groups_list = sorted({f["group_name"] for f in fixtures if f.get("group_name")})
+    fc1, fc2 = st.columns(2)
+    sel_team = fc1.selectbox("聚焦球队（可选）", ["（全局）"] + [zh(t) for t in teams], key="gchat_team")
+    sel_group = fc2.selectbox("聚焦小组（可选）", ["（全局）"] + groups_list, key="gchat_group")
+    focus_team = next((t for t in teams if zh(t) == sel_team), None) if sel_team != "（全局）" else None
+    focus_group = None if sel_group == "（全局）" else sel_group.replace("Group ", "")
+
+    history = st.session_state.setdefault("gchat_history", [])
+    for m in history:
+        st.markdown(f"**{'🧑 你' if m['role'] == 'user' else '🤖 AI'}：** {m['content']}")
+    q = st.text_area("问整届赛事的宏观问题", key="gchat_q", height=90,
+                     placeholder="例：谁最被低估？哪个小组最乱？模型到目前准不准？最大冷门可能在哪？")
+    cc1, cc2, _ = st.columns([1, 1, 2])
+    if cc1.button("发送", key="gchat_send") and q.strip():
+        history.append({"role": "user", "content": q.strip()})
+        with st.spinner("AI 统筹全局数据分析中…"):
+            ctx = tournament_chat.build_global_context(
+                model, fixtures=fixtures, focus_team=focus_team,
+                focus_group=focus_group, snapshots=snaps)
+            ans = tournament_chat.ask(q.strip(), ctx, history=history[:-1])
+        history.append({"role": "assistant", "content": ans["text"]})
+        st.rerun()
+    if cc2.button("清空对话", key="gchat_clear"):
+        st.session_state["gchat_history"] = []
+        st.rerun()
+    if st.checkbox("查看 AI 看到的赛事数据摘要", key="gchat_ctx"):
+        st.code(tournament_chat.build_global_context(
+            model, fixtures=fixtures, focus_team=focus_team, focus_group=focus_group, snapshots=snaps))
+    st.caption("AI 基于赛事统筹数据作答（夺冠模拟/各组形势/模型校准）；概率有误差、仅供参考、非投注建议。")
+
+
 inject_design_system()
 user = require_login()
 require_view_access()  # 访问口令墙：设了 ACCESS_PASSWORD 才生效；管理员 ?owner= 免口令
@@ -1870,7 +1931,7 @@ render_hero(
     "比分概率、盘口价值、串关组合与证据分析集中在一个可操作界面中。模型结论仅供参考，请理性参与并遵守当地法规。",
 )
 
-page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "大胆预测", "赛后复盘", "串关组合"]
+page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "大胆预测", "赛后复盘", "AI 分析师", "串关组合"]
 if is_owner():
     page_options.append("访问记录")
     page_options.append("投注台账")
@@ -1905,6 +1966,9 @@ if page == "大胆预测":
     st.stop()
 if page == "赛后复盘":
     render_audit(model)
+    st.stop()
+if page == "AI 分析师":
+    render_global_chat(model)
     st.stop()
 if page == "用户管理":
     render_user_management()
@@ -1955,7 +2019,10 @@ tank_risk = (o3.checkbox("⚠️ 疑似控分/默契球", value=False,
              if use_context else False)
 if action_button("🔄 一键全量刷新", help="重抓历史数据+回填赛果+重训模型+更新赛程"):
     with st.spinner("抓数据 + 回填赛果 + 重训 + 赛程中…"):
-        ingest_international_results()
+        try:
+            ingest_international_results()
+        except Exception as exc:
+            st.warning(f"历史数据抓取失败（GitHub 源超时/不可达，用库内已有数据继续）：{exc}")
         try:
             fetch_and_store_fixtures()
         except Exception as exc:
@@ -2189,6 +2256,22 @@ st.info(prof9["explanation"])
 st.caption("九维度按开发需求文档权重加权（近期状态/阵容实力/战术素养/战术匹配/赛事动机/防守组织/历史交锋/外部条件/射门效率）。"
            "🔶代理=用模型系数近似、⚪降级=数据不足按中性处理（不编造）；赔率不作为维度，仅在下方做后验校验。")
 
+section_title("关键对位与破局点")
+from wc2026.analysis import matchups as _mu
+from wc2026.data import squads as _sqm
+_mu_res = _mu.analyze_matchups(
+    home, away, exp_goals=(lam, mu),
+    sq_home=_sqm.load_fm_squad(home), sq_away=_sqm.load_fm_squad(away),
+    score_home=prof9["score_home"], score_away=prof9["score_away"])
+_mt1, _mt2 = st.columns(2)
+for _col, _t in [(_mt1, _mu_res["home_type"]), (_mt2, _mu_res["away_type"])]:
+    _col.markdown(f"**{zh(_t['team'])}** · {_t['type']}")
+    _col.caption(_t["reason"])
+for _n in _mu_res["notes"]:
+    st.markdown(f"- {_n}")
+st.caption("对位/破局点为基于阵容身价（FotMob）与模型实力的规则化定性分析；"
+           "阵容需先在下方「拉取阵容」后才有破局点，缺失时按模型实力降级。仅供参考、非投注建议。")
+
 section_title("智能体分析总结")
 _sm = _report["summary"]
 st.info(_sm["text"])
@@ -2209,6 +2292,22 @@ for _r in _report["risks"]:
         f'<span style="color:var(--wc-muted);"> — {_r["detail"]}</span></div>',
         unsafe_allow_html=True)
 st.caption("风险分级：高=可能改变结论或需重算情境；中=影响置信度；低=背景提示。首发/伤停/天气以赛前官方为准、赛前请刷新。")
+
+from wc2026.markets import odds_signals as _osig
+_sig = _osig.detect_odds_signals(home, away)
+if _sig.get("signals"):
+    st.markdown("**赔率走势信号**（市场热度≠真实稳妥）")
+    _sig_color = {"高": "#ef4444", "中": "#f59e0b", "低": "#9aa7b6"}
+    for _s in _sig["signals"]:
+        _sc = _sig_color.get(_s["level"], "#9aa7b6")
+        st.markdown(
+            f'<div style="border-left:3px solid {_sc};padding-left:10px;margin:4px 0;">'
+            f'<span style="font-weight:700;color:{_sc};">[{_s["level"]}] {_s["tag"]}</span>'
+            f'<span style="color:var(--wc-muted);"> — {_s["detail"]}</span></div>',
+            unsafe_allow_html=True)
+    st.caption(_sig["note"])
+elif _sig.get("enabled"):
+    st.caption("赔率走势：暂无明显矛盾/过热信号（已剔水仅作走势参考）。")
 
 section_title("可视化大屏 Beta")
 from wc2026.analysis import dashboard_bridge as _bridge
@@ -2775,7 +2874,7 @@ with st.expander("🤖 AI 对话（结合本场全部已加载数据问答 / 粘
             "over_under25": markets["over_under"].get("2.5"),
             "goal_bands": markets["goal_bands"], "btts": markets["btts"]["yes"],
             "correct_score_top": markets["correct_score_top"],
-            "upset": ui, "strength": sp, "goal_rec": gs,
+            "upset": ui, "strength": prof9, "goal_rec": gs,
             "h2h": ev["h2h"], "home_form": ev["home_form"], "away_form": ev["away_form"],
             "squad_value": _sv, "news_titles": _news_titles, "tactics": _tact, "fatigue": _fat,
         })
