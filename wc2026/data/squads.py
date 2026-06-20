@@ -33,7 +33,7 @@ def _get_fm_id(conn, team_lib: str) -> tuple[int, str]:
     if not res:
         raise fm.FotmobError(f"FotMob 未找到球队：{team_lib}")
     fm_id, fm_name = res
-    conn.execute("INSERT OR REPLACE INTO fm_teams VALUES (?,?,?,?)",
+    conn.execute("INSERT OR REPLACE INTO fm_teams (team_lib, fm_id, fm_name, updated_at) VALUES (?,?,?,?)",
                  (team_lib, fm_id, fm_name, _now()))
     return fm_id, fm_name
 

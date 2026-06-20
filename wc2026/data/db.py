@@ -118,6 +118,16 @@ CREATE TABLE IF NOT EXISTS bets (
     note TEXT,
     close_odds REAL
 );
+
+-- 球队实力修正镜像（权威源为 data/team_adjustments.json，此表供查询/展示）
+CREATE TABLE IF NOT EXISTS team_adjustments (
+    team TEXT PRIMARY KEY,
+    elo REAL DEFAULT 0,
+    attack REAL DEFAULT 0,
+    defense REAL DEFAULT 0,
+    sources_json TEXT,
+    updated_at TEXT
+);
 """
 
 

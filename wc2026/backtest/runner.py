@@ -52,10 +52,13 @@ def backtest_world_cup(year: str, train_years: int = 12, xi: float = 0.0010) -> 
     return _metrics(recs, year, skipped)
 
 
-def _metrics(recs: list, year: str, skipped: int) -> dict:
+def prob_metrics(recs: list) -> dict:
+    """从 [{home,draw,away,actual}] 记录算 log loss / brier / top-pick 准确率 / 校准曲线。
+
+    纯函数，供历届回测与赛后审计（模型 vs 市场）共用，保证两处指标口径一致。"""
     n = len(recs)
     if n == 0:
-        return {"year": year, "n": 0, "skipped": skipped}
+        return {"n": 0}
     ll = brier = correct = 0.0
     for r in recs:
         probs = {k: r[k] for k in ("home", "draw", "away")}
@@ -65,13 +68,20 @@ def _metrics(recs: list, year: str, skipped: int) -> dict:
         if max(probs, key=probs.get) == r["actual"]:
             correct += 1
     return {
-        "year": year, "n": n, "skipped": skipped,
+        "n": n,
         "log_loss": ll / n,
         "baseline_log_loss": UNIFORM_LOGLOSS,
         "brier": brier / n,
         "accuracy": correct / n,
         "calibration": _calibration(recs),
     }
+
+
+def _metrics(recs: list, year: str, skipped: int) -> dict:
+    m = prob_metrics(recs)
+    if m["n"] == 0:
+        return {"year": year, "n": 0, "skipped": skipped}
+    return {"year": year, "skipped": skipped, **m}
 
 
 def _calibration(recs: list, bins: int = 5) -> list:

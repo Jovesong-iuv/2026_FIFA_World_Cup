@@ -8,6 +8,8 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from wc2026.analysis import evidence
 from wc2026.config import settings
@@ -21,6 +23,13 @@ from wc2026.markets import derive
 from wc2026.models.predictor import get_model, train_and_save
 
 app = FastAPI(title="2026 World Cup Predictor", version="0.2.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _now() -> str:
@@ -112,6 +121,185 @@ def predict(home: str, away: str, neutral: bool = True, save: bool = True,
     return result
 
 
+@app.get("/intelligence")
+def intelligence_ep(home: str, away: str, neutral: bool = True,
+                    match_number: int | None = None,
+                    odds_home: float | None = None, odds_draw: float | None = None,
+                    odds_away: float | None = None) -> dict:
+    """单场智能体报告（MatchIntelligenceReport）：九维度 + 组合模型预测 + 赔率后验 + 风险/总结。
+
+    赔率仅做后验校验，不进入预测主链。可选 match_number 加载赛程/场馆与末轮战意。
+    """
+    from wc2026.analysis.intelligence import build_report
+    h, a = to_lib(home), to_lib(away)
+    model = get_model()
+    missing = [t for t in (h, a) if not model.has_team(t)]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"球队不在训练集中: {missing}")
+
+    fixture = fixtures = group_state = None
+    if match_number is not None:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT match_number, round_number, date_utc, home_team, away_team, "
+                "group_name, location, home_score, away_score FROM fixtures WHERE match_number=?",
+                (match_number,)).fetchone()
+            frows = conn.execute(
+                "SELECT match_number, date_utc, home_team, away_team, location "
+                "FROM fixtures WHERE predictable=1").fetchall()
+        fixture = dict(row) if row else None
+        fixtures = [dict(r) for r in frows]
+        if fixture and fixture.get("group_name"):
+            try:
+                from wc2026.analysis import groups as _groups, motivation as _motiv
+                states = _motiv.derive_group_states(_groups.load_group_data(model))
+                group_state = _motiv.group_state_for(states, fixture["group_name"], h, a)
+            except Exception:
+                group_state = None
+
+    odds_1x2 = None
+    if all(o and o > 1.0 for o in (odds_home, odds_draw, odds_away)):
+        odds_1x2 = {"home": odds_home, "draw": odds_draw, "away": odds_away}
+
+    return build_report(model, h, a, neutral, fixture=fixture, fixtures=fixtures,
+                        odds_1x2=odds_1x2, group_state=group_state)
+
+
+def _load_fixtures(match_number: int | None = None):
+    """加载（单场 fixture, 全部 predictable fixtures）。两者含比分字段，供审计/锁定复用。"""
+    cols = ("match_number, round_number, date_utc, home_team, away_team, "
+            "group_name, location, home_score, away_score")
+    with get_conn() as conn:
+        fixture = None
+        if match_number is not None:
+            row = conn.execute(f"SELECT {cols} FROM fixtures WHERE match_number=?",
+                               (match_number,)).fetchone()
+            fixture = dict(row) if row else None
+        frows = conn.execute(f"SELECT {cols} FROM fixtures WHERE predictable=1").fetchall()
+    return fixture, [dict(r) for r in frows]
+
+
+def _group_state_for(model, fixture, home, away):
+    if not (fixture and fixture.get("group_name")):
+        return None
+    try:
+        from wc2026.analysis import groups as _groups, motivation as _motiv
+        states = _motiv.derive_group_states(_groups.load_group_data(model))
+        return _motiv.group_state_for(states, fixture["group_name"], home, away)
+    except Exception:
+        return None
+
+
+@app.get("/intelligence/audit")
+def intelligence_audit_ep(match_number: int | None = None, neutral: bool = True) -> dict:
+    """赛后审计：模型预测 vs 市场赔率 vs 实际赛果。
+
+    带 match_number → 单场对比；不带 → 全部已完赛汇总（Brier/LogLoss/命中率 + 模型vs市场）。
+    模型概率优先取赛前锁定快照，无则当前模型事后复算（标注 model_source）。
+    """
+    from wc2026.analysis import audit as _audit
+    from wc2026.analysis.imminent import load_all_prematch_snapshots
+    model = get_model()
+    fixture, fixtures = _load_fixtures(match_number)
+    snaps = load_all_prematch_snapshots()
+    if match_number is not None:
+        if not fixture:
+            raise HTTPException(status_code=404, detail=f"比赛不存在: {match_number}")
+        return _audit.match_audit(model, fixture, neutral=neutral, fixtures=fixtures,
+                                  snapshot=snaps.get(match_number))
+    return _audit.audit_summary(model, fixtures, neutral=neutral, snapshots=snaps)
+
+
+@app.get("/intelligence/sources")
+def intelligence_sources_ep(match_number: int | None = None, home: str | None = None,
+                            away: str | None = None, neutral: bool = True) -> dict:
+    """本场所有证据源、数据完整度、首发等级、赛前锁定时间（文档 §8）。"""
+    from wc2026.analysis.intelligence import build_report
+    from wc2026.analysis.imminent import load_prematch_snapshot
+    model = get_model()
+    fixture, fixtures = _load_fixtures(match_number)
+    if match_number is not None and not fixture:
+        raise HTTPException(status_code=404, detail=f"比赛不存在: {match_number}")
+    if fixture:
+        h, a = fixture["home_team"], fixture["away_team"]
+    elif home and away:
+        h, a = to_lib(home), to_lib(away)
+    else:
+        raise HTTPException(status_code=400, detail="需提供 match_number 或 home & away")
+    rep = build_report(model, h, a, neutral, fixture=fixture, fixtures=fixtures,
+                       group_state=_group_state_for(model, fixture, h, a))
+    snap = load_prematch_snapshot(match_number) if match_number is not None else None
+    return {
+        "match": rep["match"],
+        "data_quality": rep["data_quality"],
+        "lineup": rep["lineup"],
+        "dimensions": [{"name": d["name"], "source": d["source"],
+                        "confidence": d["confidence"], "weight": d["weight"]}
+                       for d in rep["dimensions"]],
+        "market_check": {"enabled": rep["market_check"].get("enabled", False)},
+        "prematch_lock": ({"locked_at": snap["locked_at"], "phase": snap.get("phase")}
+                          if snap else None),
+        "generated_at": rep["generated_at"],
+    }
+
+
+@app.get("/dashboard/match")
+def dashboard_match_ep(home: str, away: str, neutral: bool = True,
+                       match_number: int | None = None,
+                       odds_home: float | None = None, odds_draw: float | None = None,
+                       odds_away: float | None = None) -> dict:
+    """HTML/Chart.js bridge payload for one match.
+
+    It keeps the current Python model as the source of truth and only adapts
+    the response into the reference dashboard's UI shape.
+    """
+    from wc2026.analysis.dashboard_bridge import build_dashboard_payload
+    h, a = to_lib(home), to_lib(away)
+    model = get_model()
+    fixture, fixtures = _load_fixtures(match_number)
+    odds_1x2 = None
+    if all(o and o > 1.0 for o in (odds_home, odds_draw, odds_away)):
+        odds_1x2 = {"home": odds_home, "draw": odds_draw, "away": odds_away}
+    return build_dashboard_payload(model, h, a, neutral, fixture=fixture,
+                                   fixtures=fixtures, odds_1x2=odds_1x2,
+                                   group_state=_group_state_for(model, fixture, h, a))
+
+
+@app.get("/tournament/probabilities")
+def tournament_probabilities_ep(n_sims: int = 2000) -> dict:
+    """Tournament advancement/champion probabilities for the HTML dashboard."""
+    from wc2026.analysis.dashboard_bridge import _championship_payload
+    return {"championship_odds": _championship_payload(get_model(), n_sims=n_sims)}
+
+
+@app.post("/intelligence/refresh")
+def intelligence_refresh_ep(match_number: int, depth: str = "standard", neutral: bool = True,
+                            odds_home: float | None = None, odds_draw: float | None = None,
+                            odds_away: float | None = None) -> dict:
+    """临场刷新并锁定赛前快照（文档 §6.3 / §8）。depth=standard|deep。
+
+    重算预测、检测较上一锁定版的关键变化（关键球员/概率/赔率），写库 + 导出可提交 JSON。
+    """
+    from wc2026.analysis.imminent import lock_prematch_snapshot, SNAPSHOTS_JSON
+    model = get_model()
+    fixture, fixtures = _load_fixtures(match_number)
+    if not fixture:
+        raise HTTPException(status_code=404, detail=f"比赛不存在: {match_number}")
+    odds_1x2 = None
+    if all(o and o > 1.0 for o in (odds_home, odds_draw, odds_away)):
+        odds_1x2 = {"home": odds_home, "draw": odds_draw, "away": odds_away}
+    h, a = fixture["home_team"], fixture["away_team"]
+    snap = lock_prematch_snapshot(
+        model, fixture, fixtures=fixtures, neutral=neutral, odds_1x2=odds_1x2,
+        group_state=_group_state_for(model, fixture, h, a))
+    return {
+        "locked": True, "match_number": match_number, "depth": depth,
+        "locked_at": snap["locked_at"], "phase": snap["phase"],
+        "outcomes": snap["outcomes"], "changes": snap["changes"],
+        "snapshot_file": str(SNAPSHOTS_JSON),
+    }
+
+
 @app.get("/evidence")
 def evidence_ep(home: str, away: str) -> dict:
     h, a = to_lib(home), to_lib(away)
@@ -188,3 +376,29 @@ def value_scan(neutral: bool = True, blend: float = 0.5) -> dict:
     for r in scan:
         r["home_zh"], r["away_zh"] = zh(r["home"]), zh(r["away"])
     return {"value_bets": scan, "n_matches": len(odds_map)}
+
+
+class ChatRequest(BaseModel):
+    question: str
+    history: list[dict] | None = None
+    focus_team: str | None = None
+    focus_group: str | None = None
+
+
+@app.post("/chat")
+def chat_ep(req: ChatRequest) -> dict:
+    """全局赛事 AI 对话：统筹夺冠概率 / 各组形势 / 模型校准 / 偏差案例回答宏观问题。
+
+    需配置 LLM（LLM_API_KEY）。无状态多轮：history 由调用方携带。
+    focus_team（队名，自动归一化）/ focus_group（组名）可选，触发该对象的深挖上下文。
+    """
+    from wc2026.analysis.imminent import load_all_prematch_snapshots
+    from wc2026.llm import tournament_chat
+    model = get_model()
+    _, fixtures = _load_fixtures()
+    focus_team = to_lib(req.focus_team) if req.focus_team else None
+    ctx = tournament_chat.build_global_context(
+        model, fixtures=fixtures, focus_team=focus_team, focus_group=req.focus_group,
+        snapshots=load_all_prematch_snapshots())
+    ans = tournament_chat.ask(req.question, ctx, history=req.history)
+    return {"answer": ans["text"], "source": ans["source"]}

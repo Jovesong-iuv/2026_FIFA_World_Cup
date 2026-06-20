@@ -60,6 +60,10 @@ class Settings:
     # 其他访问为只读访客。留空则不限制（本机/单人使用时全功能）。
     owner_key: str = _env_or_secret("OWNER_KEY", "")
 
+    # 站点访问口令：设置后，普通网址访问需先输入该口令才能查看（挡住陌生访问）；
+    # 管理员仍用 URL ?owner=<OWNER_KEY> 进入，免口令（老方式不变）。留空则不限制。
+    access_password: str = _env_or_secret("ACCESS_PASSWORD", "")
+
     @property
     def sqlite_path(self) -> Path:
         url = self.database_url

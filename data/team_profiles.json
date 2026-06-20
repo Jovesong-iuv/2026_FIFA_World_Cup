@@ -1,0 +1,866 @@
+{
+  "Argentina": {
+    "name_en": "Argentina",
+    "name_cn": "阿根廷",
+    "population": "4600万",
+    "wc_appearances": 18,
+    "best_achievement": "冠军 (1978,1986,2022)",
+    "background": "南美传统豪强,3次夺冠,梅西最后一届世界杯",
+    "starting_lineup": "E.Martinez; Molina, Romero, L.Martinez, Tagliafico; De Paul, Mac Allister, Almada; Fernandez, L.Martinez, Messi",
+    "training_base": "迈阿密,距多数比赛场馆较近",
+    "style_detail": "4-3-3控球体系,梅西自由人角色,高位逼抢+快速反击",
+    "formation": "4-3-3",
+    "confederation": "CONMEBOL",
+    "key_players": [
+      "梅西 Messi",
+      "阿尔瓦雷斯 Alvarez",
+      "麦卡利斯特 Mac Allister"
+    ]
+  },
+  "Spain": {
+    "name_en": "Spain",
+    "name_cn": "西班牙",
+    "population": "4800万",
+    "wc_appearances": 16,
+    "best_achievement": "冠军 (2010)",
+    "background": "欧洲技术流代表,2010南非夺冠,青训体系世界顶级",
+    "starting_lineup": "Unai Simon; Porro, Laporte, Cubarsi, Cucurella; Rodri, Pedri, Gavi; Yamal, Olmo, N.Williams",
+    "training_base": "波士顿,需适应北美气候",
+    "style_detail": "4-3-3传控体系,罗德里节拍器,亚马尔+佩德里驱动进攻",
+    "formation": "4-3-3",
+    "confederation": "UEFA",
+    "key_players": [
+      "罗德里 Rodri",
+      "亚马尔 Yamal",
+      "佩德里 Pedri"
+    ]
+  },
+  "France": {
+    "name_en": "France",
+    "name_cn": "法国",
+    "population": "6800万",
+    "wc_appearances": 17,
+    "best_achievement": "冠军 (1998, 2018)",
+    "background": "传统足球强国,2冠(1998/2018),人才济济,青训体系世界顶级",
+    "starting_lineup": "Maignan; Koundé, Saliba, Upamecano, T.Hernandez; Tchouaméni, Rabiot; Dembélé, Griezmann, Olise; Mbappé",
+    "training_base": "波士顿Bentley University,距纽约约350km",
+    "style_detail": "4-2-3-1,Mbappé/Dembélé/Olise锋线三叉戟,Griezmann前腰组织",
+    "formation": "4-2-3-1",
+    "confederation": "UEFA",
+    "key_players": [
+      "姆巴佩 Mbappe",
+      "格列兹曼 Griezmann",
+      "楚阿梅尼 Tchouameni"
+    ]
+  },
+  "England": {
+    "name_en": "England",
+    "name_cn": "英格兰",
+    "population": "5600万",
+    "wc_appearances": 16,
+    "best_achievement": "冠军 (1966)",
+    "background": "现代足球发源地,1966本土夺冠,近年大赛表现稳步提升",
+    "starting_lineup": "Pickford; Walker, Stones, Guehi, Shaw; Rice, Bellingham; Saka, Foden, Palmer; Kane",
+    "training_base": "达拉斯,气候炎热需注意体能管理",
+    "style_detail": "4-3-3高压体系,凯恩支点,贝林厄姆中场核心",
+    "formation": "4-3-3",
+    "confederation": "UEFA",
+    "key_players": [
+      "贝林厄姆 Bellingham",
+      "凯恩 Kane",
+      "福登 Foden"
+    ]
+  },
+  "Portugal": {
+    "name_en": "Portugal",
+    "name_cn": "葡萄牙",
+    "population": "1030万",
+    "wc_appearances": 9,
+    "best_achievement": "四强 (1966, 2006)",
+    "background": "欧洲劲旅,C罗最后一届世界杯,中场创造力出色",
+    "starting_lineup": "Diogo Costa; Cancelo, Pepe, Danilo, Mendes; Vitinha, Neves; B.Fernandes, B.Silva, Leão; Ronaldo",
+    "training_base": "堪萨斯城,中部平原气候",
+    "style_detail": "4-2-3-1,B费+B席中场双核,C罗禁区终结者",
+    "formation": "4-2-3-1",
+    "confederation": "UEFA",
+    "key_players": [
+      "C罗 Ronaldo",
+      "布鲁诺 Bruno Fernandes",
+      "莱奥 Rafael Leao"
+    ]
+  },
+  "Brazil": {
+    "name_en": "Brazil",
+    "name_cn": "巴西",
+    "population": "2.1亿",
+    "wc_appearances": 22,
+    "best_achievement": "冠军 (1958,1962,1970,1994,2002)",
+    "background": "五星巴西,世界杯历史最成功球队,24年冠军荒渴望回归",
+    "starting_lineup": "Ederson; Danilo, Marquinhos, Militão, Arana; Casemiro, Paquetá; Raphinha, Rodrygo, Vini Jr; Endrick",
+    "training_base": "亚特兰大,南方温暖气候",
+    "style_detail": "4-3-3桑巴风格,维尼修斯边路突破,安切洛蒂战术纪律加持",
+    "formation": "4-3-3",
+    "confederation": "CONMEBOL",
+    "key_players": [
+      "维尼修斯 Vinicius Jr",
+      "罗德里戈 Rodrygo",
+      "卡塞米罗 Casemiro"
+    ]
+  },
+  "Morocco": {
+    "name_en": "Morocco",
+    "name_cn": "摩洛哥",
+    "population": "3700万",
+    "wc_appearances": 7,
+    "best_achievement": "四强 (2022)",
+    "background": "2022卡塔尔世界杯四强创造历史,防守韧性+快速反击",
+    "starting_lineup": "Bono; Hakimi, Saiss, Aguerd, Mazraoui; Amrabat, Ounahi; Ziyech, Belkhdim, Boufal; En-Nesyri",
+    "training_base": "华盛顿,东海岸便利",
+    "style_detail": "4-2-3-1高位逼抢,哈基米边路走廊,防守反击为核心战术",
+    "formation": "4-2-3-1",
+    "confederation": "CAF",
+    "key_players": [
+      "哈基米 Hakimi",
+      "齐耶赫 Ziyech",
+      "恩内斯里 En-Nesyri"
+    ]
+  },
+  "Netherlands": {
+    "name_en": "Netherlands",
+    "name_cn": "荷兰",
+    "population": "1800万",
+    "wc_appearances": 11,
+    "best_achievement": "亚军 (1974,1978,2010)",
+    "background": "无冕之王,三次亚军,战术素养高但大赛心理承压不足",
+    "starting_lineup": "Verbruggen; Dumfries, Van Dijk, Aké, Frimpong; De Jong, Reijnders; Gakpo, Simons, Malen; Depay",
+    "training_base": "多伦多,加拿大赛区",
+    "style_detail": "3-4-3全攻全守,范迪克后防统帅,加克波+西蒙斯创造进攻",
+    "formation": "3-4-3",
+    "confederation": "UEFA",
+    "key_players": [
+      "范迪克 Van Dijk",
+      "加克波 Gakpo",
+      "德容 De Jong"
+    ]
+  },
+  "Belgium": {
+    "name_en": "Belgium",
+    "name_cn": "比利时",
+    "population": "1200万",
+    "wc_appearances": 14,
+    "best_achievement": "四强 (2018)",
+    "background": "黄金一代最后的窗口,德布劳内领军,大赛经验丰富",
+    "starting_lineup": "Casteels; Castagne, Faes, Theate, Debast; De Bruyne, Tielemans; Doku, Openda, Trossard; Lukaku",
+    "training_base": "温哥华,西海岸需调整时差",
+    "style_detail": "4-2-3-1德布劳内组织核心,多库边路突击,攻守转换速度快",
+    "formation": "4-2-3-1",
+    "confederation": "UEFA",
+    "key_players": [
+      "德布劳内 De Bruyne",
+      "多库 Doku",
+      "蒂勒曼斯 Tielemans"
+    ]
+  },
+  "Germany": {
+    "name_en": "Germany",
+    "name_cn": "德国",
+    "population": "8400万",
+    "wc_appearances": 20,
+    "best_achievement": "冠军 (1954,1974,1990,2014)",
+    "background": "四冠王底蕴,纳格尔斯曼执教,年轻天才涌现",
+    "starting_lineup": "Ter Stegen; Kimmich, Rüdiger, Tah, Raum; Musiala, Goretzka; Wirtz, Sané; Havertz, Füllkrug",
+    "training_base": "休斯顿,高温高湿考验体能",
+    "style_detail": "4-2-3-1高位逼抢,穆西亚拉+维尔茨双前腰,强队杀手特质",
+    "formation": "4-2-3-1",
+    "confederation": "UEFA",
+    "key_players": [
+      "穆西亚拉 Musiala",
+      "维尔茨 Wirtz",
+      "哈弗茨 Havertz"
+    ]
+  },
+  "Croatia": {
+    "name_en": "Croatia",
+    "name_cn": "克罗地亚",
+    "population": "400万",
+    "wc_appearances": 7,
+    "best_achievement": "亚军 (2018), 四强 (2022)",
+    "background": "人口小国大赛奇迹,莫德里奇最后一届,底蕴深厚",
+    "starting_lineup": "Livakovic; Juranovic, Lovren, Gvardiol, Sosa; Modric, Kovacic, Brozovic; Vlasic, Kramaric, Perisic",
+    "training_base": "费城,东海岸历史名城",
+    "style_detail": "4-3-3中场控制型,莫德里奇节拍器,格瓦迪奥尔后防核心",
+    "formation": "4-3-3",
+    "confederation": "UEFA",
+    "key_players": [
+      "莫德里奇 Modric",
+      "科瓦契奇 Kovacic",
+      "格瓦迪奥尔 Gvardiol"
+    ]
+  },
+  "Colombia": {
+    "name_en": "Colombia",
+    "name_cn": "哥伦比亚",
+    "population": "5200万",
+    "wc_appearances": 7,
+    "best_achievement": "八强 (2014)",
+    "background": "南美劲旅,路易斯·迪亚斯领衔,近期状态火热五连胜",
+    "starting_lineup": "Vargas; Muñoz, Davinson, Lucumi, Mojica; Lerma, Uribe; L.Diaz, James, Arias; Borre",
+    "training_base": "西雅图,太平洋西北温和气候",
+    "style_detail": "4-2-3-1进攻型,路易斯·迪亚斯边路爆点,J罗组织调度",
+    "formation": "4-2-3-1",
+    "confederation": "CONMEBOL",
+    "key_players": [
+      "路易斯迪亚斯 Luis Diaz",
+      "哈梅斯 James Rodriguez",
+      "桑切斯 Davinson Sanchez"
+    ]
+  },
+  "Mexico": {
+    "name_en": "Mexico",
+    "name_cn": "墨西哥",
+    "population": "1.3亿",
+    "wc_appearances": 18,
+    "best_achievement": "八强 (1970, 1986)",
+    "background": "东道主之一,主场优势明显,阿兹特克球场揭幕战",
+    "starting_lineup": "Ochoa; Araujo, Montes, Vasquez, Gallardo; E.Alvarez, Guardado; Lozano, Alvarez, Antuna; Jimenez",
+    "training_base": "墨西哥城阿兹特克球场,高海拔2240m",
+    "style_detail": "4-3-3东道主打法,洛萨诺边路突破,高海拔主场优势显著",
+    "formation": "4-3-3",
+    "confederation": "CONCACAF",
+    "key_players": [
+      "洛萨诺 Lozano",
+      "阿尔瓦雷斯 Edson Alvarez",
+      "希门尼斯 Jimenez"
+    ]
+  },
+  "Senegal": {
+    "name_en": "Senegal",
+    "name_cn": "塞内加尔",
+    "population": "1800万",
+    "wc_appearances": 4,
+    "best_achievement": "八强 (2002)",
+    "background": "西非足球新兴力量,2022非洲杯冠军,球员多效力欧洲联赛",
+    "starting_lineup": "E.Mendy; Sabaly, Koulibaly, Diatta, Diakhite; Kouyate, I.Sarr, P.Sarr; Mané, Jackson, Ndiaye",
+    "training_base": "新泽西Rutgers University,距MetLife仅50km",
+    "style_detail": "4-3-3高位逼抢,Mané领衔,世预赛10场仅失3球",
+    "formation": "4-3-3",
+    "confederation": "CAF",
+    "key_players": [
+      "马内 Mane",
+      "库利巴利 Koulibaly",
+      "恩迪亚耶 Ndiaye"
+    ]
+  },
+  "Uruguay": {
+    "name_en": "Uruguay",
+    "name_cn": "乌拉圭",
+    "population": "350万",
+    "wc_appearances": 14,
+    "best_achievement": "冠军 (1930, 1950)",
+    "background": "两届冠军,贝尔萨执教攻守平衡,巴尔韦德核心",
+    "starting_lineup": "Rochet; Varela, Gimenez, Araujo, Olivera; Valverde, Bentancur, Vecino; Pellistri, Núñez, M.Araujo",
+    "training_base": "迈阿密,南美气候适应性好",
+    "style_detail": "4-4-2贝尔萨式攻守平衡,巴尔韦德全能中场,努涅斯冲击力",
+    "formation": "4-4-2",
+    "confederation": "CONMEBOL",
+    "key_players": [
+      "巴尔韦德 Valverde",
+      "努涅斯 Darwin Nunez",
+      "阿劳霍 Araujo"
+    ]
+  },
+  "USA": {
+    "name_en": "USA",
+    "name_cn": "美国",
+    "population": "3.3亿",
+    "wc_appearances": 12,
+    "best_achievement": "四强 (1930)",
+    "background": "东道主之一,旅欧球星众多,主场优势+年轻阵容",
+    "starting_lineup": "Turner; Dest, Zimmerman, Ream, A.Robinson; McKennie, Adams, Reyna; Pulisic, Sargent, Weah",
+    "training_base": "洛杉矶SoFi体育场,加州大本营",
+    "style_detail": "4-3-3美式进攻足球,普利西奇核心,身体对抗+速度优势",
+    "formation": "4-3-3",
+    "confederation": "CONCACAF",
+    "key_players": [
+      "普利西奇 Pulisic",
+      "雷纳 Reyna",
+      "麦肯尼 McKennie"
+    ]
+  },
+  "Japan": {
+    "name_en": "Japan",
+    "name_cn": "日本",
+    "population": "1.25亿",
+    "wc_appearances": 8,
+    "best_achievement": "十六强 (2002,2010,2018,2022)",
+    "background": "亚洲最强,旅欧球星云集,2022曾击败德国西班牙",
+    "starting_lineup": "Suzuki; Sakai, Tomiyasu, Itakura, Ito; Endo, Morita; Kubo, Doan, Mitoma; Ueda",
+    "training_base": "堪萨斯城,需适应中部气候",
+    "style_detail": "4-2-3-1战术灵活,可高位逼抢也可低位防守,久保建英创造力核心",
+    "formation": "4-2-3-1",
+    "confederation": "AFC",
+    "key_players": [
+      "三笘薰 Mitoma",
+      "久保建英 Kubo",
+      "富安健洋 Tomiyasu"
+    ]
+  },
+  "Switzerland": {
+    "name_en": "Switzerland",
+    "name_cn": "瑞士",
+    "population": "870万",
+    "wc_appearances": 12,
+    "best_achievement": "八强 (1934,1938,1954)",
+    "background": "欧洲稳定力量,战术纪律严明,扎卡+沙奇里经验老道",
+    "starting_lineup": "Sommer; Widmer, Akanji, Schär, Rodriguez; Xhaka, Freuler; Shaqiri, Aebischer, Ndoye; Embolo",
+    "training_base": "多伦多,加拿大赛区",
+    "style_detail": "4-2-3-1稳健防守反击,扎卡中场调度,定位球得分能力强",
+    "formation": "4-2-3-1",
+    "confederation": "UEFA",
+    "key_players": [
+      "扎卡 Xhaka",
+      "沙奇里 Shaqiri",
+      "阿坎吉 Akanji"
+    ]
+  },
+  "Iran": {
+    "name_en": "Iran",
+    "name_cn": "伊朗",
+    "population": "8800万",
+    "wc_appearances": 7,
+    "best_achievement": "小组赛 (多次)",
+    "background": "亚洲传统劲旅,防守硬朗,塔雷米+阿兹蒙双箭头",
+    "starting_lineup": "Beiranvand; Mohammadi, Hosseini, Majidi, Rezaeian; Noorollahi, Ezatolahi; Ghoddos, Azmoun, Taremi",
+    "training_base": "温哥华,西海岸时区",
+    "style_detail": "4-4-2防守反击,塔雷米+阿兹蒙双前锋,身体对抗强悍",
+    "formation": "4-2-3-1",
+    "confederation": "AFC",
+    "key_players": [
+      "塔雷米 Taremi",
+      "阿兹蒙 Azmoun",
+      "贾汉巴赫什 Jahanbakhsh"
+    ]
+  },
+  "Turkey": {
+    "name_en": "Turkey",
+    "name_cn": "土耳其",
+    "population": "8500万",
+    "wc_appearances": 3,
+    "best_achievement": "四强 (2002)",
+    "background": "新星涌现,居莱尔+耶尔德兹天才组合,进攻天赋异禀",
+    "starting_lineup": "Günok; Çelik, Demiral, Kabak, Kadioglu; Calhanoglu, Kökçü; Yildiz, Güler, Aktürkoglu; Yilmaz",
+    "training_base": "洛杉矶,加州气候宜人",
+    "style_detail": "4-2-3-1技术流,恰尔汉奥卢组织,居莱尔+耶尔德兹双翼突击",
+    "formation": "4-2-3-1",
+    "confederation": "UEFA",
+    "key_players": [
+      "阿尔达居莱尔 Arda Guler",
+      "耶尔迪兹 Yildiz",
+      "恰尔汗奥卢 Calhanoglu"
+    ]
+  },
+  "Ecuador": {
+    "name_en": "Ecuador",
+    "name_cn": "厄瓜多尔",
+    "population": "1800万",
+    "wc_appearances": 4,
+    "best_achievement": "十六强 (2006)",
+    "background": "南美新锐,凯塞多中场铁闸,防守为基反击定上限",
+    "starting_lineup": "Galindez; Preciado, Pacho, Hincapie, Estupinan; Caicedo, Franco; Plata, Mena; Valencia, Estrada",
+    "training_base": "休斯顿,高温适应",
+    "style_detail": "4-4-2防守反击,凯塞多中场绞杀,瓦伦西亚速度冲击",
+    "formation": "4-3-3",
+    "confederation": "CONMEBOL",
+    "key_players": [
+      "凯塞多 Caicedo",
+      "因卡皮耶 Hincapie",
+      "瓦伦西亚 Valencia"
+    ]
+  },
+  "Austria": {
+    "name_en": "Austria",
+    "name_cn": "奥地利",
+    "population": "910万",
+    "wc_appearances": 8,
+    "best_achievement": "四强 (1934), 八强 (1954,1978)",
+    "background": "朗尼克执教高压体系,战术纪律严明,团队战斗力强",
+    "starting_lineup": "Pentz; Posch, Danso, Wöber, Mwene; Seiwald, Laimer; Sabitzer, Baumgartner; Arnautovic, Wimmer",
+    "training_base": "费城,东海岸",
+    "style_detail": "4-2-2-2朗尼克高位逼抢,萨比策中场核心,整体协作性强",
+    "formation": "4-2-3-1",
+    "confederation": "UEFA",
+    "key_players": [
+      "萨比策 Sabitzer",
+      "莱默尔 Laimer",
+      "阿瑙托维奇 Arnautovic"
+    ]
+  },
+  "South Korea": {
+    "name_en": "South Korea",
+    "name_cn": "韩国",
+    "population": "5200万",
+    "wc_appearances": 11,
+    "best_achievement": "四强 (2002)",
+    "background": "亚洲传统强队,孙兴慜领衔锋线,旅欧军团技战术素养高",
+    "starting_lineup": "Kim Seung-gyu; Kim Moon-hwan, Kim Min-jae, Kim Young-gwon, Kim Jin-su; Hwang In-beom, Lee Jae-sung; Son Heung-min, Lee Kang-in, Hwang Hee-chan; Cho Gue-sung",
+    "training_base": "亚特兰大,南方气候",
+    "style_detail": "4-3-3孙兴慜核心,金玟哉后防铁闸,高位逼抢+快速传递",
+    "formation": "4-3-3",
+    "confederation": "AFC",
+    "key_players": [
+      "孙兴慜 Son Heung-min",
+      "金玟哉 Kim Min-jae",
+      "李刚仁 Lee Kang-in"
+    ]
+  },
+  "Australia": {
+    "name_en": "Australia",
+    "name_cn": "澳大利亚",
+    "population": "2600万",
+    "wc_appearances": 7,
+    "best_achievement": "十六强 (2006, 2022)",
+    "background": "身体素质出色,对抗能力强,2022打入十六强",
+    "starting_lineup": "Ryan; Atkinson, Souttar, Rowles, Behich; Irvine, Hrustic; Goodwin, McGree; Duke, Maclaren",
+    "training_base": "西雅图,太平洋西北",
+    "style_detail": "4-4-2身体对抗型,定位球威胁大,防守组织严密",
+    "formation": "4-2-3-1",
+    "confederation": "AFC",
+    "key_players": [
+      "赫鲁斯蒂奇 Hrustic",
+      "博伊尔 Boyle",
+      "罗尔斯 Rowles"
+    ]
+  },
+  "Algeria": {
+    "name_en": "Algeria",
+    "name_cn": "阿尔及利亚",
+    "population": "4500万",
+    "wc_appearances": 5,
+    "best_achievement": "十六强 (2014)",
+    "background": "北非劲旅,马赫雷斯虽已退役但新一代球员成长迅速",
+    "starting_lineup": "Mbolhi; Atal, Mandi, Bedrane, Bensebaini; Bennacer, Zerrouki; Boudaoui, Amoura, Mahrez Jr; Slimani",
+    "training_base": "达拉斯,德州高温",
+    "style_detail": "4-3-3北非技术流,中场控球能力强,定位球战术多样",
+    "formation": "4-2-3-1",
+    "confederation": "CAF",
+    "key_players": [
+      "本纳赛尔 Bennacer",
+      "马赫雷斯 Mahrez",
+      "曼迪 Mandi"
+    ]
+  },
+  "Egypt": {
+    "name_en": "Egypt",
+    "name_cn": "埃及",
+    "population": "1.1亿",
+    "wc_appearances": 4,
+    "best_achievement": "小组赛 (多次)",
+    "background": "非洲人口大国,萨拉赫领衔,防守稳固反击犀利",
+    "starting_lineup": "El Shenawy; Ashour, Hegazi, Rabia, Fathy; Elneny, Hamdi; Salah, Marmoush, Trézéguet; Mostafa Mohamed",
+    "training_base": "迈阿密,南美气候适应",
+    "style_detail": "4-2-3-1萨拉赫核心,防守紧凑,反击效率高",
+    "formation": "4-2-3-1",
+    "confederation": "CAF",
+    "key_players": [
+      "萨拉赫 Salah",
+      "埃尔内尼 Elneny",
+      "特雷泽盖 Trezeguet"
+    ]
+  },
+  "Canada": {
+    "name_en": "Canada",
+    "name_cn": "加拿大",
+    "population": "3900万",
+    "wc_appearances": 3,
+    "best_achievement": "小组赛 (1986,2022,2026)",
+    "background": "东道主之一,阿方索·戴维斯领衔,首次本土作战",
+    "starting_lineup": "Borjan; Johnston, Miller, Cornelius, Adekugbe; Kaye, Eustaquio; David, Larin, Davies; Jonathan David",
+    "training_base": "温哥华BC Place,西海岸主场",
+    "style_detail": "4-3-3美式速度足球,戴维斯边路爆点,身体对抗+快速转换",
+    "formation": "4-3-3",
+    "confederation": "CONCACAF",
+    "key_players": [
+      "戴维斯 Davies",
+      "戴维 David",
+      "欧斯塔基奥 Eustaquio"
+    ]
+  },
+  "Norway": {
+    "name_en": "Norway",
+    "name_cn": "挪威",
+    "population": "540万",
+    "wc_appearances": 4,
+    "best_achievement": "十六强 (1998)",
+    "background": "时隔28年重返世界杯,哈兰德+厄德高双星闪耀",
+    "starting_lineup": "Nyland; Ryerson, Strandberg, Ostigard, Meling; Odegaard, Berge; Elyounoussi, Haaland, Sorloth; Thorstvedt",
+    "training_base": "纽约MetLife球场附近",
+    "style_detail": "4-4-2直接打法,哈兰德高空轰炸,厄德高创造力中场",
+    "formation": "4-3-3",
+    "confederation": "UEFA",
+    "key_players": [
+      "哈兰德 Haaland",
+      "厄德高 Odegaard",
+      "索尔洛特 Sorloth"
+    ]
+  },
+  "Ivory Coast": {
+    "name_en": "Ivory Coast",
+    "name_cn": "科特迪瓦",
+    "population": "2800万",
+    "wc_appearances": 4,
+    "best_achievement": "小组赛 (多次)",
+    "background": "非洲象军团,身体素质出色,塞巴斯蒂安·哈勒支点前锋",
+    "starting_lineup": "Badra; Aurier, Bailly, Djalo, Ghislan; Kessié, Sangaré; Haller, Diomande, Boga; Kouamé",
+    "training_base": "休斯顿,高温考验",
+    "style_detail": "4-3-3身体对抗型,哈勒支点前锋,边路传中+定位球",
+    "formation": "4-3-3",
+    "confederation": "CAF",
+    "key_players": [
+      "凯西 Kessie",
+      "阿莱 Haller",
+      "佩佩 Pepe"
+    ]
+  },
+  "Panama": {
+    "name_en": "Panama",
+    "name_cn": "巴拿马",
+    "population": "440万",
+    "wc_appearances": 3,
+    "best_achievement": "小组赛 (2018,2022,2026)",
+    "background": "中美洲小国连续三届参赛,防守为基拼搏精神强",
+    "starting_lineup": "Mejia; Murillo, Escobar, Córdoba, Davis; Cooper, Godoy; Bárcenas, Carrasquilla; Fajardo, Waterman",
+    "training_base": "迈阿密,气候适应好",
+    "style_detail": "5-4-1防守反击,五后卫体系,定位球是主要得分手段",
+    "formation": "5-4-1",
+    "confederation": "CONCACAF",
+    "key_players": [
+      "戴维斯 Davis",
+      "卡拉斯基亚 Carrasquilla",
+      "穆里略 Murillo"
+    ]
+  },
+  "Sweden": {
+    "name_en": "Sweden",
+    "name_cn": "瑞典",
+    "population": "1040万",
+    "wc_appearances": 12,
+    "best_achievement": "亚军 (1958), 四强 (1950,1994)",
+    "background": "北欧传统强队,战术纪律严明,身体对抗出色",
+    "starting_lineup": "Olsen; Krafth, Lindelöf, Danielson, Augustinsson; Kulusevski, Svanberg; Forsberg, Elanga; Isak, Gyökeres",
+    "training_base": "多伦多,加拿大赛区",
+    "style_detail": "4-4-2北欧实用主义,伊萨克+久克雷斯双前锋,定位球威胁大",
+    "formation": "4-4-2",
+    "confederation": "UEFA",
+    "key_players": [
+      "库卢塞夫斯基 Kulusevski",
+      "伊萨克 Isak",
+      "林德洛夫 Lindelof"
+    ]
+  },
+  "Czech Republic": {
+    "name_en": "Czech Republic",
+    "name_cn": "捷克",
+    "population": "1070万",
+    "wc_appearances": 6,
+    "best_achievement": "亚军 (1934,1962)",
+    "background": "东欧劲旅,中场控制力不错,定位球得分能力强",
+    "starting_lineup": "Stanek; Coufal, Holes, Krejci, Zeleny; Soucek, Sadilek; Cerny, Barak, Hlozek; Schick",
+    "training_base": "墨西哥城,高海拔2240m需适应",
+    "style_detail": "4-2-3-1中场控制型,绍切克铁腰,希克禁区终结者",
+    "formation": "4-2-3-1",
+    "confederation": "UEFA",
+    "key_players": [
+      "绍切克 Soucek",
+      "希克 Schick",
+      "曹法尔 Coufal"
+    ]
+  },
+  "Paraguay": {
+    "name_en": "Paraguay",
+    "name_cn": "巴拉圭",
+    "population": "740万",
+    "wc_appearances": 9,
+    "best_achievement": "八强 (2010)",
+    "background": "南美传统球队,防守硬朗,身体对抗出色",
+    "starting_lineup": "Silva; Balbuena, Gomez, Alonso, Junior Alonso; Almiron, Villasanti; Enciso, Sosa; Sanabria, Gonzalez",
+    "training_base": "亚特兰大,南方气候",
+    "style_detail": "4-4-2防守反击,中场绞杀,阿尔米隆创造力核心",
+    "formation": "4-4-2",
+    "confederation": "CONMEBOL",
+    "key_players": [
+      "阿尔米隆 Almiron",
+      "巴尔布埃纳 Balbuena",
+      "罗梅罗 Romero"
+    ]
+  },
+  "Scotland": {
+    "name_en": "Scotland",
+    "name_cn": "苏格兰",
+    "population": "540万",
+    "wc_appearances": 9,
+    "best_achievement": "小组赛 (多次,从未晋级淘汰赛)",
+    "background": "阔别28年重返世界杯,麦金+罗伯逊核心,拼搏精神强",
+    "starting_lineup": "Gunn; Ralston, Hendry, Tierney, Robertson; Gilmour, McGregor; McGinn, Christie, Adams; Dykes",
+    "training_base": "波士顿,苏格兰裔美国人多有支持",
+    "style_detail": "4-3-3英式硬朗,罗伯逊左路走廊,麦金中场发动机",
+    "formation": "3-4-3",
+    "confederation": "UEFA",
+    "key_players": [
+      "麦克托米奈 McTominay",
+      "罗伯逊 Robertson",
+      "蒂尔尼 Tierney"
+    ]
+  },
+  "Tunisia": {
+    "name_en": "Tunisia",
+    "name_cn": "突尼斯",
+    "population": "1200万",
+    "wc_appearances": 7,
+    "best_achievement": "小组赛 (多次)",
+    "background": "北非迦太基之鹰,战术纪律好,防守组织严密",
+    "starting_lineup": "Dahmen; Dräger, Meriah, Talbi, Maaloul; Skhiri, Laïdouni; Khaoui, Hannibal Mejbri, Msakni; Jaziri",
+    "training_base": "西雅图,温和气候",
+    "style_detail": "4-3-3北非技术流,斯希里中场屏障,防守组织度高于攻击力",
+    "formation": "4-2-3-1",
+    "confederation": "CAF",
+    "key_players": [
+      "哈兹里 Khazri",
+      "梅布里 Mejbri",
+      "萨西 Sassi"
+    ]
+  },
+  "DR Congo": {
+    "name_en": "DR Congo",
+    "name_cn": "民主刚果",
+    "population": "1亿",
+    "wc_appearances": 2,
+    "best_achievement": "小组赛 (1974,2026)",
+    "background": "时隔52年重返世界杯,身体素质惊人,潜力巨大",
+    "starting_lineup": "Matampi; Wissa, Batubinsika, N'Sakala, Masuaku; Moutoussamy, Kayembe; Mbemba, Bakambu; Dieumerci, Elia",
+    "training_base": "费城,东海岸",
+    "style_detail": "4-4-2非洲力量型,身体对抗极强,边路速度突出",
+    "formation": "4-3-3",
+    "confederation": "CAF",
+    "key_players": [
+      "巴坎布 Bakambu",
+      "姆本巴 Mbemba",
+      "维萨 Wissa"
+    ]
+  },
+  "Uzbekistan": {
+    "name_en": "Uzbekistan",
+    "name_cn": "乌兹别克斯坦",
+    "population": "3500万",
+    "wc_appearances": 1,
+    "best_achievement": "首次参赛 (2026)",
+    "background": "中亚新军首次亮相世界杯,预选赛表现出色",
+    "starting_lineup": "Yusupov; Ashurmatov, Sayfiev, Khusanov, Alijanov; Masharipov, Shukurov; Nasrullaev, Urunov; Shomurodov, Sergeev",
+    "training_base": "堪萨斯城,中部平原",
+    "style_detail": "4-2-3-1中亚实用打法,中场控制力强,定位球战术丰富",
+    "formation": "4-2-3-1",
+    "confederation": "AFC",
+    "key_players": [
+      "肖穆罗多夫 Shomurodov",
+      "乌鲁诺夫 Urunov",
+      "马沙里波夫 Masharipov"
+    ]
+  },
+  "Qatar": {
+    "name_en": "Qatar",
+    "name_cn": "卡塔尔",
+    "population": "290万",
+    "wc_appearances": 2,
+    "best_achievement": "小组赛 (2022,2026)",
+    "background": "2022东道主后再战世界杯,技术流打法,大赛经验增加",
+    "starting_lineup": "Barsham; Pedro, Al-Rawi, Khoukhi, Ahmed; Afif, Al-Haydos, Hatem; Ali, Hassan, Boudiaf",
+    "training_base": "温哥华,西海岸",
+    "style_detail": "4-3-3西班牙技术流影响,阿费夫创造力核心,控球率较高",
+    "formation": "3-5-2",
+    "confederation": "AFC",
+    "key_players": [
+      "阿菲夫 Afif",
+      "阿里 Ali",
+      "哈桑 Hassan"
+    ]
+  },
+  "Iraq": {
+    "name_en": "Iraq",
+    "name_cn": "伊拉克",
+    "population": "4200万",
+    "wc_appearances": 2,
+    "best_achievement": "小组赛 (1986,2026)",
+    "background": "时隔40年重返世界杯,伊拉克精神力量强大,亚洲区黑马",
+    "starting_lineup": "Jalal; Sulaka, Putros, Adnan, Jaffer; Iqbal, Bayesh; Hussein, Attwan, Ammar; Al-Hamadi",
+    "training_base": "纽约,中东裔社区支持",
+    "style_detail": "4-4-2拼搏型打法,中场绞杀,身体对抗凶悍,精神力量超群",
+    "formation": "4-2-3-1",
+    "confederation": "AFC",
+    "key_players": [
+      "侯赛因阿里 Hussein Ali",
+      "艾曼侯赛因 Aymen Hussein",
+      "雷尚 Bashar Resan"
+    ]
+  },
+  "South Africa": {
+    "name_en": "South Africa",
+    "name_cn": "南非",
+    "population": "6000万",
+    "wc_appearances": 4,
+    "best_achievement": "小组赛 (1998,2002,2010)",
+    "background": "非洲东道经验(2010),揭幕战对阵墨西哥,拼搏精神",
+    "starting_lineup": "Williams; Mokoena, Xulu, Modiba, Mvala; Zwane, Mendy; Foster, Rayners, Masiko; Lorch",
+    "training_base": "墨西哥城,阿兹特克球场揭幕战",
+    "style_detail": "4-3-3南非速度型,边路快速突破,主场氛围加持",
+    "formation": "4-2-3-1",
+    "confederation": "CAF",
+    "key_players": [
+      "陶 Tau",
+      "莫迪巴 Modiba",
+      "莫科纳 Mokoena"
+    ]
+  },
+  "Saudi Arabia": {
+    "name_en": "Saudi Arabia",
+    "name_cn": "沙特阿拉伯",
+    "population": "3600万",
+    "wc_appearances": 7,
+    "best_achievement": "十六强 (1994)",
+    "background": "亚洲传统劲旅,2022曾爆冷击败阿根廷",
+    "starting_lineup": "Al-Owais; Al-Shahrani, Al-Bulaihi, Tambakti, Al-Ghanam; Kanno, Al-Malki; Al-Dawsari, Al-Faraj, Al-Buraikan; Al-Shehri",
+    "training_base": "达拉斯,德州气候炎热",
+    "style_detail": "4-2-3-1技术流,2022击败阿根廷信心,控球+快速反击",
+    "formation": "4-2-3-1",
+    "confederation": "AFC",
+    "key_players": [
+      "达瓦萨里 Al-Dawsari",
+      "布赖坎 Al-Buraikan",
+      "法拉吉 Al-Faraj"
+    ]
+  },
+  "Jordan": {
+    "name_en": "Jordan",
+    "name_cn": "约旦",
+    "population": "1100万",
+    "wc_appearances": 1,
+    "best_achievement": "首次参赛 (2026)",
+    "background": "首次亮相世界杯,亚洲区预选赛表现出色,防守为基",
+    "starting_lineup": "Abu Laila; Haddad, Nasib, Al-Arab, Al-Rashdan; Al-Rawabdeh, Al-Tamari; Olwan, Naimat; Al-Naimat, Mardikian",
+    "training_base": "达拉斯,高温考验",
+    "style_detail": "5-3-2防守反击,低位防守+快速反击,定位球战术",
+    "formation": "4-2-3-1",
+    "confederation": "AFC",
+    "key_players": [
+      "塔马里 Al-Tamari",
+      "穆萨塔马里 Musa Al-Taamari",
+      "法伊萨尔 Baha Faisal"
+    ]
+  },
+  "Bosnia": {
+    "name_en": "Bosnia",
+    "name_cn": "波黑",
+    "population": "330万",
+    "wc_appearances": 2,
+    "best_achievement": "小组赛 (2014,2026)",
+    "background": "波黑时隔12年重返,哲科虽已退役但新一代成长",
+    "starting_lineup": "Vasilj; Corluka, Barisic, Ahmedhodzic, Kolasinac; Pjanic, Hadziahmetovic; Demirovic, Prevljak; Dzeko Jr, Krunic",
+    "training_base": "多伦多,加拿大赛区",
+    "style_detail": "4-2-3-1巴尔干技术流,中场控制力强,定位球威胁大",
+    "formation": "4-4-2",
+    "confederation": "UEFA",
+    "key_players": [
+      "哲科 Dzeko",
+      "皮亚尼奇 Pjanic",
+      "克鲁尼奇 Krunic"
+    ]
+  },
+  "Cape Verde": {
+    "name_en": "Cape Verde",
+    "name_cn": "佛得角",
+    "population": "60万",
+    "wc_appearances": 1,
+    "best_achievement": "首次参赛 (2026)",
+    "background": "人口仅60万的最小参赛国,非洲杯黑马,团结拼搏",
+    "starting_lineup": "Vozinha; Delmiro, Loga, Bebé, Jeffry; Laros, Semedo; Rodrigues, Mendes, Tavares; Vagner",
+    "training_base": "西雅图,温和气候",
+    "style_detail": "4-4-2防守反击,团队精神极强,防守组织度高,反击速度快",
+    "formation": "4-3-3",
+    "confederation": "CAF",
+    "key_players": [
+      "贝贝 Bebe",
+      "门德斯 Ryan Mendes",
+      "罗德里格斯 Garry Rodrigues"
+    ]
+  },
+  "Ghana": {
+    "name_en": "Ghana",
+    "name_cn": "加纳",
+    "population": "3300万",
+    "wc_appearances": 5,
+    "best_achievement": "八强 (2010)",
+    "background": "非洲黑星,2010八强历史最佳,库杜斯+帕尔特伊核心",
+    "starting_lineup": "Ati-Zigi; Lamptey, Amartey, Djiku, Baba; Partey, Kudus; Sulemana, Salisu; Ayew, Semenyo",
+    "training_base": "费城,东海岸",
+    "style_detail": "4-3-3非洲力量+技术,库杜斯边路爆点,帕尔特伊中场屏障",
+    "formation": "4-2-3-1",
+    "confederation": "CAF",
+    "key_players": [
+      "库杜斯 Kudus",
+      "苏莱马纳 Sulemana",
+      "帕尔特伊 Thomas Partey"
+    ]
+  },
+  "Curacao": {
+    "name_en": "Curacao",
+    "name_cn": "库拉索",
+    "population": "16万",
+    "wc_appearances": 1,
+    "best_achievement": "首次参赛 (2026)",
+    "background": "加勒比最小国家首次参赛,荷兰裔球员为主,技术流打法",
+    "starting_lineup": "Room; Martina, Gaari, Lachman, Felix; Bacuna, Janga; Antonia, Felicia, Lokilo; Gakpo Jr",
+    "training_base": "迈阿密,加勒比海气候相似",
+    "style_detail": "4-3-3荷兰技术流影响,多名荷兰联赛球员,控球+边路进攻",
+    "formation": "4-3-3",
+    "confederation": "CONCACAF",
+    "key_players": [
+      "洛克霍夫 Lokhof",
+      "巴库纳 Bacuna",
+      "马蒂纳 Martina"
+    ]
+  },
+  "Haiti": {
+    "name_en": "Haiti",
+    "name_cn": "海地",
+    "population": "1200万",
+    "wc_appearances": 2,
+    "best_achievement": "小组赛 (1974,2026)",
+    "background": "时隔52年重返,加勒比海精神之队,拼搏精神大于实力",
+    "starting_lineup": "Desmangles; Arcus, Ade, Francois, Valsin; Pierrot, Mustivar; Nazon, Hérilier, Prunier; Pierrot Jr",
+    "training_base": "迈阿密,加勒比海气候适应",
+    "style_detail": "4-4-2拼搏型,身体对抗凶悍,定位球是主要进攻手段",
+    "formation": "4-2-3-1",
+    "confederation": "CONCACAF",
+    "key_players": [
+      "皮埃里亚斯 Pierias",
+      "纳宗 Nazon",
+      "皮埃罗 Pierrot"
+    ]
+  },
+  "New Zealand": {
+    "name_en": "New Zealand",
+    "name_cn": "新西兰",
+    "population": "520万",
+    "wc_appearances": 3,
+    "best_achievement": "小组赛 (1982,2010,2026)",
+    "background": "大洋洲代表,身体对抗出色,2010三战皆平不败",
+    "starting_lineup": "Marinovic; Smith, Boxall, Billingsley, Cacace; Bell, Stamenic; Garbett, Wood; McCowatt, Champness",
+    "training_base": "温哥华,西海岸需长途飞行",
+    "style_detail": "4-4-2英式长传冲吊,伍德高中锋支点,身体对抗+定位球",
+    "formation": "4-4-2",
+    "confederation": "OFC",
+    "key_players": [
+      "伍德 Wood",
+      "托马斯 Thomas",
+      "史密斯 Smith"
+    ]
+  }
+}

@@ -24,7 +24,7 @@ _MIN_INTERVAL = 1.0  # 礼貌限速：相邻请求至少间隔 1s
 _LAST = {"t": 0.0}
 
 # 个别队名 FotMob 搜索词与库名不一致时的覆写（库名 → 搜索词）
-SEARCH_ALIAS = {"United States": "USA"}
+SEARCH_ALIAS = {"United States": "USA", "Czech Republic": "Czechia"}
 
 # FotMob squad 分组标题 → 标准位置
 _GROUP_POS = {"keepers": "Goalkeeper", "defenders": "Defender",

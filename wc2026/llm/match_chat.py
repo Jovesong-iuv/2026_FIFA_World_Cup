@@ -7,10 +7,20 @@ from __future__ import annotations
 
 from wc2026.llm import provider
 
+ANALYSIS_PRINCIPLES = (
+    "分析时遵循以下专业原则：\n"
+    "1) 区分盘口类型——竞彩让球（强队赢2球+为让胜、赢1球为让平、不胜为让负）、亚盘（结合水位/升降盘/赢半输半）、"
+    "欧赔（胜平负倾向）、大小球；切勿把竞彩让1与亚盘-1.5混为一谈。\n"
+    "2) 不低估亚非/中北美等非传统强队的防守韧性、低位防守与受让价值——强队≠稳胜。\n"
+    "3) 也不低估超级巨星面对密集防守的破局能力；区分超级巨星型强队、体系型强队、低效热门队三类，给出不同盘口倾向。\n"
+    "4) 市场热度≠真实稳妥——留意热门降赔但让球不升盘、平局降赔、强队深盘水位升高、大球降水过快过热等矛盾信号。\n"
+    "5) 不要绝对化（禁用「必胜/稳胆/稳赢/一定打穿」），结论须给出主要依据、最可能剧本、潜在冷门路径与最大不确定性。"
+)
+
 _SYSTEM = (
     "你是一名世界杯赔率与比赛分析师。严格依据【比赛数据】中给出的信息用中文回答，"
     "简洁专业、有条理。数据中没有的内容要明说「数据未提供」，不要编造具体数字或赔率。"
-    "始终提醒：模型与概率存在误差，内容仅供参考，非投注建议。"
+    "始终提醒：模型与概率存在误差，内容仅供参考，非投注建议。\n" + ANALYSIS_PRINCIPLES
 )
 
 
@@ -96,17 +106,21 @@ def build_parlay_context(legs: list[dict], summary: dict) -> str:
 
 
 def ask(question: str, context: str, history: list[dict] | None = None,
-        max_tokens: int = 800) -> dict:
-    """返回 {text, source}。source: 'llm' 成功 / 'error' 失败（含原因，不抛出）。"""
+        max_tokens: int = 800, system: str | None = None,
+        context_label: str = "比赛数据") -> dict:
+    """返回 {text, source}。source: 'llm' 成功 / 'error' 失败（含原因，不抛出）。
+
+    system/context_label 可覆盖，供全局赛事对话等场景复用同一问答骨架。"""
     convo = ""
     for h in (history or [])[-6:]:
         who = "用户" if h.get("role") == "user" else "助手"
         convo += f"{who}：{h.get('content', '')}\n"
-    prompt = (f"【比赛数据】\n{context}\n\n"
+    prompt = (f"【{context_label}】\n{context}\n\n"
               f"【对话历史】\n{convo or '（无）'}\n"
-              f"【当前问题】{question}\n请基于上面的比赛数据回答：")
+              f"【当前问题】{question}\n请基于上面的{context_label}回答：")
     try:
-        text = provider.chat(prompt, system=_SYSTEM, max_tokens=max_tokens, temperature=0.3)
+        text = provider.chat(prompt, system=system or _SYSTEM,
+                             max_tokens=max_tokens, temperature=0.3)
         return {"text": text, "source": "llm"}
     except provider.LLMError as exc:
         return {"text": f"LLM 调用失败：{exc}", "source": "error"}

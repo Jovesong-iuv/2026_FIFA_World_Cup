@@ -146,3 +146,69 @@ def simulate_groups(model, group_data: dict, n_sims: int = 10000, seed: int = 12
         rows.sort(key=lambda d: d["qualify"], reverse=True)
         result[g] = rows
     return result
+
+
+def _h2h_order(block: list[dict], played_pairs: list[tuple]) -> list[dict]:
+    """对积分/净胜球/进球完全并列的子集，用其内部已赛比赛(相互战绩)细分。"""
+    names = {r["team"] for r in block}
+    mini = {t: {"pts": 0, "gd": 0, "gf": 0} for t in names}
+    for (h, a, hs, as_) in played_pairs:
+        if h in names and a in names:
+            mini[h]["gf"] += hs; mini[h]["gd"] += hs - as_
+            mini[a]["gf"] += as_; mini[a]["gd"] += as_ - hs
+            if hs > as_:
+                mini[h]["pts"] += 3
+            elif hs < as_:
+                mini[a]["pts"] += 3
+            else:
+                mini[h]["pts"] += 1; mini[a]["pts"] += 1
+    return sorted(block, key=lambda r: (-mini[r["team"]]["pts"], -mini[r["team"]]["gd"],
+                                        -mini[r["team"]]["gf"], r["team"]))
+
+
+def compute_standings(group_data: dict) -> dict:
+    """基于已完赛比分算各组真实积分榜。返回 {group: [row...]}（按名次升序）。
+
+    row: team / played / w / d / l / gf / ga / gd / pts / rank。
+    排序：积分 > 净胜球 > 进球 > 相互战绩 > 队名（近似世界杯规则；未实现公平竞赛分等更次级规则）。
+    只统计已结束比赛（小组赛进行中即为当前榜）。
+    """
+    out = {}
+    for g in sorted(group_data):
+        teams = group_data[g]["teams"]
+        st = {t: {"team": t, "played": 0, "w": 0, "d": 0, "l": 0, "gf": 0, "ga": 0} for t in teams}
+        played_pairs = []
+        for (hi, ai, hs, as_) in group_data[g]["matches"]:
+            if hs is None or as_ is None:
+                continue
+            h, a, hs, as_ = teams[hi], teams[ai], int(hs), int(as_)
+            st[h]["played"] += 1; st[h]["gf"] += hs; st[h]["ga"] += as_
+            st[a]["played"] += 1; st[a]["gf"] += as_; st[a]["ga"] += hs
+            if hs > as_:
+                st[h]["w"] += 1; st[a]["l"] += 1
+            elif hs < as_:
+                st[a]["w"] += 1; st[h]["l"] += 1
+            else:
+                st[h]["d"] += 1; st[a]["d"] += 1
+            played_pairs.append((h, a, hs, as_))
+
+        rows = list(st.values())
+        for r in rows:
+            r["gd"] = r["gf"] - r["ga"]
+            r["pts"] = r["w"] * 3 + r["d"]
+        rows.sort(key=lambda r: (-r["pts"], -r["gd"], -r["gf"], r["team"]))
+
+        # 对 (pts,gd,gf) 完全并列的连续段做相互战绩细分
+        ordered, i, n = [], 0, len(rows)
+        while i < n:
+            j = i
+            while j < n and (rows[j]["pts"], rows[j]["gd"], rows[j]["gf"]) == \
+                    (rows[i]["pts"], rows[i]["gd"], rows[i]["gf"]):
+                j += 1
+            block = rows[i:j]
+            ordered.extend(_h2h_order(block, played_pairs) if len(block) > 1 else block)
+            i = j
+        for k, r in enumerate(ordered, 1):
+            r["rank"] = k
+        out[g] = ordered
+    return out
