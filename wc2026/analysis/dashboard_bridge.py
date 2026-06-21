@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from wc2026.analysis import groups, intelligence, ranking, tournament, wc_history
+from wc2026.analysis.team_style import style_profile
 from wc2026.config import settings
 from wc2026.data.flags import flag_emoji
 from wc2026.data.team_names import zh
@@ -231,6 +232,9 @@ def build_dashboard_payload(model, home: str, away: str, neutral: bool = True, *
             "top_scorelines": pred_block["top_scores"][:3],
             "over_2_5_prob": pred_block["totals"]["over_2_5"],
             "under_2_5_prob": pred_block["totals"]["under_2_5"],
+            "win_margins": pred_block.get("win_margins", {}),
+            "style_profiles": {"home": style_profile(home, profiles),
+                               "away": style_profile(away, profiles)},
         },
         "odds_validation": _market_for_dashboard(report),
         "summary": report["summary"],

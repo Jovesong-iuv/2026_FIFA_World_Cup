@@ -563,6 +563,16 @@ canvas {{ max-width:100%; }}
 .guide-item.reco {{ border-color:rgba(245,158,11,.45); background:rgba(245,158,11,.10); box-shadow:0 0 30px rgba(245,158,11,.08); }}
 .guide-item .s {{ font-size:28px; font-weight:950; }}
 .guide-item .p {{ color:var(--muted); font-size:13px; }}
+.lambda-panel {{ display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:0 20px 20px; }}
+.lambda-box {{ border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:14px; background:rgba(255,255,255,.035); }}
+.lambda-box h3 {{ margin:0 0 10px; font-size:14px; }}
+.factor-row {{ display:grid; grid-template-columns:92px 1fr 42px; gap:8px; align-items:center; margin:7px 0; color:var(--muted); font-size:12px; }}
+.factor-track {{ height:8px; border-radius:999px; background:rgba(255,255,255,.07); overflow:hidden; }}
+.factor-fill {{ height:100%; border-radius:999px; background:linear-gradient(90deg,var(--blue),var(--gold)); }}
+.margin-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }}
+.margin-pill {{ border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:10px; text-align:center; background:rgba(255,255,255,.03); }}
+.margin-pill b {{ display:block; font-size:18px; }}
+.margin-pill span {{ color:var(--dim); font-size:12px; }}
 .odds {{ padding:20px; overflow:auto; }}
 table {{ width:100%; border-collapse:collapse; }}
 th,td {{ padding:11px 10px; border-bottom:1px solid rgba(255,255,255,.07); text-align:left; white-space:nowrap; }}
@@ -578,7 +588,7 @@ th {{ color:var(--dim); font-size:12px; }}
 @media(max-width:760px) {{
   .wrap {{ padding:12px; }} .team-card,.grid2,.prob-grid,.records,.summary {{ grid-template-columns:1fr; padding:16px; }}
   .vs {{ display:none; }} .score {{ font-size:44px; }} .info-row {{ grid-template-columns:92px 1fr; }}
-  .guide-list {{ grid-template-columns:1fr; }}
+  .guide-list,.lambda-panel,.margin-grid {{ grid-template-columns:1fr; }}
 }}
 </style>
 </head>
@@ -653,7 +663,25 @@ function matrixHtml() {{
 function renderPrediction() {{
   const p = DATA.prediction, top = p.top_scorelines || [];
   const guides = top.map((s,i)=>`<div class="guide-item ${{i===0?'reco':''}}"><div>${{i===0?'⭐ 推荐':'参考'}}</div><div class="s">${{s.score}}</div><div class="p">${{pct(s.probability)}}</div></div>`).join('');
-  return `<div class="card"><div class="title"><div><h2>胜平负 / 比分矩阵 / 指导比分</h2><p>Dixon-Coles 组合模型 · λ ${{p.lambda_a.toFixed(2)}} : ${{p.lambda_b.toFixed(2)}}</p></div></div><div class="prob-grid"><div class="donut"><canvas id="donut" width="260" height="260"></canvas><div class="donut-center"><b>${{top[0]?.score || '—'}}</b><br><span>最可能比分</span></div></div><div>${{matrixHtml()}}</div></div><div class="guide"><div class="guide-list">${{guides}}</div></div></div>`;
+  return `<div class="card"><div class="title"><div><h2>胜平负 / 比分矩阵 / 指导比分</h2><p>Dixon-Coles 组合模型 · λ ${{p.lambda_a.toFixed(2)}} : ${{p.lambda_b.toFixed(2)}}</p></div></div><div class="prob-grid"><div class="donut"><canvas id="donut" width="260" height="260"></canvas><div class="donut-center"><b>${{top[0]?.score || '—'}}</b><br><span>最可能比分</span></div></div><div>${{matrixHtml()}}</div></div><div class="guide"><div class="guide-list">${{guides}}</div></div>${{renderLambdaPanel()}}</div>`;
+}}
+function factorRows(profile) {{
+  const labels = {{attack_volume:'机会量',chance_quality:'机会质量',transition_attack:'转换',pressing:'逼抢',low_block:'低位',set_piece_attack:'定位球',defensive_resistance:'防守韧性',tempo:'节奏'}};
+  const dims = profile?.dimensions || {{}};
+  return Object.entries(labels).map(([k,label]) => {{
+    const raw = Number(dims[k] || 0), v = Math.max(0, Math.min(1, raw));
+    return `<div class="factor-row"><span>${{label}}</span><div class="factor-track"><div class="factor-fill" style="width:${{Math.round(v*100)}}%"></div></div><b>${{raw.toFixed(2)}}</b></div>`;
+  }}).join('');
+}}
+function renderLambdaPanel() {{
+  const p = DATA.prediction, sp = p.style_profiles || {{}}, m = p.win_margins || {{}};
+  const homeName = DATA.match.home_cn, awayName = DATA.match.away_cn;
+  return `<div class="lambda-panel">
+    <div class="lambda-box"><h3>λ 风格 proxy · ${{homeName}}</h3>${{factorRows(sp.home)}}<p class="note">阵型 ${{esc(sp.home?.formation || '—')}} · ${{esc(sp.home?.lean || '未知')}}取向</p></div>
+    <div class="lambda-box"><h3>λ 风格 proxy · ${{awayName}}</h3>${{factorRows(sp.away)}}<p class="note">阵型 ${{esc(sp.away?.formation || '—')}} · ${{esc(sp.away?.lean || '未知')}}取向</p></div>
+    <div class="lambda-box"><h3>${{homeName}} 净胜阶梯</h3><div class="margin-grid"><div class="margin-pill"><b>${{pct(m.home_by_2_plus)}}</b><span>净胜2+</span></div><div class="margin-pill"><b>${{pct(m.home_by_3_plus)}}</b><span>净胜3+</span></div><div class="margin-pill"><b>${{pct(m.home_by_4_plus)}}</b><span>净胜4+</span></div></div></div>
+    <div class="lambda-box"><h3>${{awayName}} 净胜阶梯</h3><div class="margin-grid"><div class="margin-pill"><b>${{pct(m.away_by_2_plus)}}</b><span>净胜2+</span></div><div class="margin-pill"><b>${{pct(m.away_by_3_plus)}}</b><span>净胜3+</span></div><div class="margin-pill"><b>${{pct(m.away_by_4_plus)}}</b><span>净胜4+</span></div></div></div>
+  </div>`;
 }}
 function renderOdds() {{
   const rows = Object.entries(DATA.odds_validation || {{}}).map(([k,o]) => {{

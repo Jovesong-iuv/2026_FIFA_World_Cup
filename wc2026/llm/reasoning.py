@@ -21,7 +21,10 @@ _SYSTEM = (
 
 
 def build_factors(model, home: str, away: str, neutral: bool) -> dict:
-    lam, mu = model.expected_goals(home, away, neutral)
+    if hasattr(model, "prediction_goals"):
+        lam, mu = model.prediction_goals(home, away, neutral)
+    else:
+        lam, mu = model.expected_goals(home, away, neutral)
     edge = (model.attack[home] + model.defense[away]) - (model.attack[away] + model.defense[home])
     return {
         "home": home, "away": away, "neutral": neutral,

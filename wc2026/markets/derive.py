@@ -99,6 +99,17 @@ def goal_bands(mat: np.ndarray) -> dict:
     }
 
 
+def win_margin_ladders(mat: np.ndarray, thresholds: tuple[int, ...] = (2, 3, 4)) -> dict:
+    """净胜阶梯概率：主/客分别净胜 N 球以上。"""
+    i, j = np.indices(mat.shape)
+    margin = i - j
+    out = {}
+    for n in thresholds:
+        out[f"home_by_{n}_plus"] = float(mat[margin >= n].sum())
+        out[f"away_by_{n}_plus"] = float(mat[margin <= -n].sum())
+    return out
+
+
 def half_time_1x2(lam: float, mu: float) -> dict:
     """半场胜平负；用全场预期进球的 45/90 比例近似半场进球率。"""
     mat = _poisson_score_matrix(lam * 0.5, mu * 0.5)
@@ -155,6 +166,7 @@ def summarize(
         "asian_handicap": {str(l): asian_handicap(mat, l) for l in ah_lines},
         "btts": both_teams_to_score(mat),
         "goal_bands": goal_bands(mat),
+        "win_margins": win_margin_ladders(mat),
         "correct_score_top": correct_score_top(mat),
     }
 

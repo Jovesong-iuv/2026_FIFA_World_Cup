@@ -139,6 +139,7 @@ def _prediction_block(markets: dict, lam: float, mu: float, pred: dict) -> dict:
                        for s in markets["correct_score_top"][:5]],
         "totals": {"over_2_5": round(ou.get("over", 0.0), 4), "under_2_5": round(ou.get("under", 0.0), 4)},
         "goal_bands": markets["goal_bands"],
+        "win_margins": {k: round(v, 4) for k, v in markets.get("win_margins", {}).items()},
         "adj_factors": pred["adj_factors"],
     }
 

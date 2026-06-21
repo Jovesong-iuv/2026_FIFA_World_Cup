@@ -49,7 +49,9 @@ def _predict(home: str, away: str, neutral: bool, use_context: bool = False) -> 
         mat, (lam, mu), context_notes = adj["matrix"], adj["exp_goals"], adj["notes"]
     else:
         mat = model.score_matrix(home, away, neutral)
-        lam, mu = model.expected_goals(home, away, neutral)
+        lam, mu = (model.prediction_goals(home, away, neutral)
+                   if hasattr(model, "prediction_goals")
+                   else model.expected_goals(home, away, neutral))
     markets = derive.summarize(mat)
     reason = reasoning.generate_reason(model, home, away, neutral, markets)
     return {

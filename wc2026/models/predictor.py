@@ -14,6 +14,7 @@ import pandas as pd
 
 from wc2026.config import settings
 from wc2026.data.db import get_conn
+from wc2026.analysis.team_style import load_team_profiles, style_goal_adjustment
 from wc2026.models.dixon_coles import DixonColesModel
 from wc2026.models.elo import EloModel
 
@@ -48,10 +49,12 @@ def _recalibrate(mat: np.ndarray, px: dict, target: dict) -> np.ndarray:
 class EnsembleModel:
     """对外与 DixonColesModel 接口兼容；score_matrix 用 Elo 集成拉正胜平负。"""
 
-    def __init__(self, dc: DixonColesModel, elo: EloModel | None = None, w: float = ENSEMBLE_W):
+    def __init__(self, dc: DixonColesModel, elo: EloModel | None = None, w: float = ENSEMBLE_W,
+                 team_profiles: dict | None = None):
         self.dc = dc
         self.elo = elo
         self.w = w
+        self.team_profiles = load_team_profiles() if team_profiles is None else team_profiles
 
     @property
     def teams(self):
@@ -75,11 +78,18 @@ class EnsembleModel:
     def expected_goals(self, h, a, neutral=True):
         return self.dc.expected_goals(h, a, neutral)
 
+    def prediction_goals(self, home, away, neutral=True):
+        """返回实际用于 score_matrix 的期望进球（含球队画像风格修正）。"""
+        lam, mu = self.dc.expected_goals(home, away, neutral)
+        style = style_goal_adjustment(home, away, lam, mu, self.team_profiles)
+        return style["home_goals"], style["away_goals"]
+
     def matrix_from_goals(self, lam, mu):
         return self.dc.matrix_from_goals(lam, mu)
 
     def score_matrix(self, home, away, neutral=True):
-        mat = self.dc.score_matrix(home, away, neutral)
+        lam, mu = self.prediction_goals(home, away, neutral)
+        mat = self.dc.matrix_from_goals(lam, mu)
         if self.elo is None or not self.elo.ratings:
             return mat
         from wc2026.markets.derive import outcomes_1x2
