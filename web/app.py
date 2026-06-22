@@ -580,6 +580,9 @@ th {{ color:var(--dim); font-size:12px; }}
 .dev-pos {{ color:#7bf7c5; font-weight:900; }} .dev-neg {{ color:#ffaaa9; font-weight:900; }} .dev-neu {{ color:var(--muted); font-weight:900; }}
 .summary {{ display:grid; grid-template-columns:1.3fr 1fr; gap:18px; padding:20px; }}
 .note {{ color:var(--muted); line-height:1.8; }}
+.field-analysis {{ margin-top:14px; padding:14px; border-radius:14px; border:1px solid rgba(245,158,11,.22); background:rgba(245,158,11,.07); }}
+.field-analysis h3 {{ margin:0 0 8px; font-size:15px; color:#ffd58a; }}
+.field-analysis p {{ margin:0; white-space:pre-line; color:#dbe6f4; line-height:1.75; }}
 .risk {{ border-left:3px solid var(--gold); padding:8px 0 8px 12px; color:var(--muted); margin:8px 0; }}
 .champ {{ padding:20px; }}
 .champ-row {{ display:grid; grid-template-columns:36px 1fr 80px; gap:10px; align-items:center; margin:10px 0; }}
@@ -693,7 +696,9 @@ function renderOdds() {{
 }}
 function renderSummary() {{
   const s = DATA.summary || {{}}, risks = DATA.risks || [];
-  return `<div class="card"><div class="title"><div><h2>分析总结与风险提示</h2><p>保留当前项目逐场详情核心解释</p></div></div><div class="summary"><div class="note">${{esc(s.text || '')}}</div><div>${{risks.map(r=>`<div class="risk"><b>[${{r.level}}] ${{r.tag}}</b><br>${{esc(r.detail)}}</div>`).join('')}}</div></div></div>`;
+  const a = DATA.match_analysis || {{}};
+  const analysis = a.text ? `<div class="field-analysis"><h3>分场分析</h3><p>${{esc(a.text)}}</p></div>` : '';
+  return `<div class="card"><div class="title"><div><h2>分析总结与风险提示</h2><p>保留当前项目逐场详情核心解释</p></div></div><div class="summary"><div class="note">${{esc(s.text || '')}}${{analysis}}</div><div>${{risks.map(r=>`<div class="risk"><b>[${{r.level}}] ${{r.tag}}</b><br>${{esc(r.detail)}}</div>`).join('')}}</div></div></div>`;
 }}
 function renderChampion() {{
   const rows = (DATA.championship_odds || []).slice(0,10);
@@ -2045,25 +2050,21 @@ use_context = o2.checkbox("应用情境调整", value=False,
 tank_risk = (o3.checkbox("⚠️ 疑似控分/默契球", value=False,
                          help="末轮出线已定可能消极比赛/算计排名：下调进球并提示爆冷风险")
              if use_context else False)
-if action_button("🔄 一键全量刷新", help="重抓历史数据+回填赛果+重训模型+更新赛程"):
-    with st.spinner("抓数据 + 回填赛果 + 重训 + 赛程中…"):
-        try:
-            ingest_international_results()
-        except Exception as exc:
-            st.warning(f"历史数据抓取失败（GitHub 源超时/不可达，用库内已有数据继续）：{exc}")
-        try:
-            fetch_and_store_fixtures()
-        except Exception as exc:
-            st.warning(f"赛程刷新失败：{exc}")
-        from wc2026.data.results import backfill_fixture_scores, export_results_json
-        backfill_fixture_scores()
-        export_results_json()
-        _m = train_and_save()
-        from wc2026.analysis.adjustments import recompute
-        recompute(_m, with_news=False)
+if action_button("🔄 一键全量刷新", help="逐步刷新；单个联网源失败会记录并继续后续步骤"):
+    from wc2026.refresh import resilient_refresh
+    with st.spinner("抓数据 + 回填赛果 + 重训 + 赛中修正中…"):
+        _refresh_result = resilient_refresh()
         st.cache_resource.clear()
         st.cache_data.clear()
-    st.success("已刷新（含赛果回填 + 赛中实力修正）")
+    _ok = _refresh_result["status"] == "ok"
+    (st.success if _ok else st.warning)(
+        f"刷新{'完成' if _ok else '部分完成'}，总耗时 {_refresh_result['seconds']}s。")
+    for _step in _refresh_result["steps"]:
+        _msg = f"{_step['label']}（{_step['seconds']}s）"
+        if _step["ok"]:
+            st.caption(f"✅ {_msg}")
+        else:
+            st.warning(f"⚠️ {_msg}失败：{_step.get('error')}")
     st.rerun()
 st.caption("LLM 理由/分析：" + ("✅ 已配置，可手动触发" if llm_configured() else "⚠️ 规则模板(未接入)"))
 st.markdown('</div>', unsafe_allow_html=True)

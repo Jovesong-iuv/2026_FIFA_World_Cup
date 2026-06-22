@@ -336,14 +336,9 @@ def history(home: str, away: str, limit: int = 20) -> dict:
 
 @app.post("/refresh")
 def refresh() -> dict:
-    """一键全量刷新：历史数据 + 重训模型 + 赛程。"""
-    stats = ingest_international_results()
-    model = train_and_save()
-    try:
-        fx = fetch_and_store_fixtures()
-    except Exception as exc:
-        fx = {"error": str(exc)}
-    return {"data": stats, "teams": len(model.teams), "fixtures": fx, "refreshed_at": _now()}
+    """一键全量刷新：每步独立失败并返回结构化结果。"""
+    from wc2026.refresh import resilient_refresh
+    return {**resilient_refresh(), "refreshed_at": _now()}
 
 
 @app.get("/backtest")

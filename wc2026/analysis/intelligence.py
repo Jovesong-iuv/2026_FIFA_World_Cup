@@ -109,6 +109,11 @@ def build_report(model, home: str, away: str, neutral: bool = True, *,
         "generated_at": _now(),
     }
     report["summary"] = _summary_block(home, away, report)
+    try:
+        from wc2026.analysis.match_insights import build_match_analysis
+        report["match_analysis"] = build_match_analysis(home, away, report)
+    except Exception:
+        report["match_analysis"] = {"available": False, "text": "暂无本场补充分析。"}
     return report
 
 

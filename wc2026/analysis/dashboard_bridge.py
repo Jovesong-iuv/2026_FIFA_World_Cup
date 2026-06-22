@@ -238,6 +238,7 @@ def build_dashboard_payload(model, home: str, away: str, neutral: bool = True, *
         },
         "odds_validation": _market_for_dashboard(report),
         "summary": report["summary"],
+        "match_analysis": report.get("match_analysis"),
         "risks": report["risks"],
         "championship_odds": _championship_payload(model),
         "generated_at": report["generated_at"],

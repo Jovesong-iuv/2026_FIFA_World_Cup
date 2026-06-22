@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import requests
 
+from wc2026.config import settings
 from wc2026.data.db import get_conn
 from wc2026.data.team_names import to_lib
 from wc2026.models.predictor import get_model
@@ -36,7 +37,7 @@ CREATE TABLE fixtures (
 
 
 def fetch_and_store_fixtures() -> dict:
-    data = requests.get(FEED, timeout=30).json()
+    data = requests.get(FEED, timeout=settings.refresh_http_timeout).json()
     known = set(get_model().teams)
     rows = []
     for m in data:

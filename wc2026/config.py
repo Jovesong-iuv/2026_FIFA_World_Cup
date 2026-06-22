@@ -56,6 +56,9 @@ class Settings:
     # 赔率源（The Odds API）
     odds_api_key: str = _env_or_secret("ODDS_API_KEY", "")
 
+    # 刷新联网超时：单步失败会降级继续，避免一键刷新长时间卡死。
+    refresh_http_timeout: float = float(_env_or_secret("REFRESH_HTTP_TIMEOUT", "20"))
+
     # 所有者口令：设置后仅 URL 带 ?owner=<该值> 进入所有者模式（可拉取/训练/AI）；
     # 其他访问为只读访客。留空则不限制（本机/单人使用时全功能）。
     owner_key: str = _env_or_secret("OWNER_KEY", "")

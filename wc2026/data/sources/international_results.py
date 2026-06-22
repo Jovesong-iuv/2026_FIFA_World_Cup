@@ -24,7 +24,7 @@ def _is_competitive(tournament: object) -> int:
 def fetch_results() -> pd.DataFrame:
     """下载并清洗历史结果，返回带 is_competitive 标记的 DataFrame。"""
     url = f"{settings.intl_results_base}/results.csv"
-    resp = requests.get(url, timeout=60)
+    resp = requests.get(url, timeout=settings.refresh_http_timeout)
     resp.raise_for_status()
     df = pd.read_csv(io.StringIO(resp.text))
 

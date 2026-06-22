@@ -1,0 +1,39 @@
+{
+  "matches": {
+    "Spain::Saudi Arabia": {
+      "data_as_of": "2026-06-22",
+      "prior_matches": [
+        {
+          "team": "Spain",
+          "opponent": "Cape Verde",
+          "score": "0-0",
+          "possession": 0.74,
+          "shots_for": 27,
+          "xg_for": 2.7,
+          "takeaway": "比赛内容并不差，主要问题是把握机会，而不是创造不出机会。"
+        },
+        {
+          "team": "Saudi Arabia",
+          "opponent": "Uruguay",
+          "shots_against": 27,
+          "takeaway": "承受大量射门，门将多次救险，低位防守压力较大。"
+        }
+      ],
+      "availability_notes": [
+        "亚马尔受伤以来第一次首发，比赛时间和连续冲刺能力仍可能受到控制。"
+      ],
+      "tactical_notes": [
+        "西班牙预计继续围攻，沙特则会以五后卫低位防守。"
+      ],
+      "market_view": {
+        "primary": "上半场小1.5",
+        "avoid": "西班牙-2.5/3",
+        "scoreline_primary": "2-0",
+        "scoreline_secondary": "3-0",
+        "notes": [
+          "3-0确实可能，但2-0、1-0的合计概率更高，深盘容错不足。"
+        ]
+      }
+    }
+  }
+}
