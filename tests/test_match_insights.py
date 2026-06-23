@@ -1,6 +1,9 @@
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
-from wc2026.analysis.match_insights import build_match_analysis
+from wc2026.analysis.match_insights import build_match_analysis, refresh_match_insight
 
 
 class MatchInsightsTest(unittest.TestCase):
@@ -51,6 +54,42 @@ class MatchInsightsTest(unittest.TestCase):
 
         self.assertFalse(res["available"])
         self.assertIn("暂无", res["text"])
+
+    def test_refresh_match_insight_merges_online_sources(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "match_insights.json"
+            with patch("wc2026.analysis.match_insights.fbref.fetch_team_shooting",
+                       side_effect=[{"shots": 18, "xg": 1.9}, {"shots": 8, "xg": 0.7}]), \
+                    patch("wc2026.analysis.match_insights.squads.refresh_fm_squad",
+                          side_effect=[{"formation": "4-3-3", "injured": 1},
+                                       {"formation": "5-4-1", "injured": 0}]), \
+                    patch("wc2026.analysis.match_insights.news.fetch_for_teams",
+                          return_value=[{"title": "Spain star returns", "source": "News", "link": "#"}]):
+                res = refresh_match_insight("Spain", "Saudi Arabia", path=path)
+
+            self.assertTrue(res["ok"])
+            self.assertTrue(path.exists())
+            built = build_match_analysis(
+                "Spain", "Saudi Arabia", {"prediction": {}},
+                insights=__import__("json").loads(path.read_text(encoding="utf-8")),
+            )
+            self.assertTrue(built["available"])
+            self.assertIn("FBref聚合", built["text"])
+            self.assertIn("4-3-3", built["text"])
+
+    def test_refresh_match_insight_keeps_partial_data_when_source_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "match_insights.json"
+            with patch("wc2026.analysis.match_insights.fbref.fetch_team_shooting",
+                       side_effect=RuntimeError("fbref down")), \
+                    patch("wc2026.analysis.match_insights.squads.refresh_fm_squad",
+                          return_value={"formation": "4-3-3", "injured": 0}), \
+                    patch("wc2026.analysis.match_insights.news.fetch_for_teams", return_value=[]):
+                res = refresh_match_insight("A", "B", path=path)
+
+            self.assertFalse(res["ok"])
+            self.assertIn("FBref", " ".join(res["errors"]))
+            self.assertTrue(path.exists())
 
 
 if __name__ == "__main__":
