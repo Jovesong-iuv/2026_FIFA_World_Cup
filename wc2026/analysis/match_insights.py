@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 from wc2026.config import settings
 from wc2026.data.team_names import zh
 from wc2026.data import squads
-from wc2026.data.sources import fbref, news
+from wc2026.data.db import get_conn
+from wc2026.data.sources import fbref, fotmob, news
 
 INSIGHTS_PATH = settings.data_dir / "match_insights.json"
 
@@ -45,7 +46,11 @@ def _prob(v) -> str:
 
 
 def _prior_sentence(row: dict) -> str:
-    bits = [f"{zh(row.get('team'))}首轮"]
+    source = str(row.get("source") or "")
+    if not row.get("opponent") and "聚合" in source:
+        bits = [f"{zh(row.get('team'))}本届聚合数据"]
+    else:
+        bits = [f"{zh(row.get('team'))}首轮"]
     if row.get("score"):
         bits.append(f"面对{zh(row.get('opponent'))} {row['score']}")
     elif row.get("opponent"):
@@ -57,8 +62,8 @@ def _prior_sentence(row: dict) -> str:
         stats.append(f"{int(row['shots_for'])}次射门")
     if row.get("xg_for") is not None:
         stats.append(f"约{row['xg_for']:.1f}预期进球")
-    if row.get("source"):
-        stats.append(str(row["source"]))
+    if source:
+        stats.append(source)
     if row.get("shots_against") is not None:
         stats.append(f"承受{int(row['shots_against'])}次射门")
     if stats:
@@ -86,6 +91,31 @@ def _shooting_row(team: str, data: dict | None) -> dict | None:
         notes.append(f"射正 {data['sot']}")
     row["takeaway"] = "；".join(notes) if notes else "该数据为球队聚合射门/xG，不等同于单场技术统计。"
     return row
+
+
+def _fotmob_stats_row(team: str, data: dict | None) -> dict | None:
+    if not data:
+        return None
+    row = {"team": team, "source": "FotMob本届聚合"}
+    if data.get("possession") is not None:
+        row["possession"] = data["possession"]
+    if data.get("xg") is not None:
+        row["xg_for"] = data["xg"]
+    notes = []
+    if data.get("goals_per_match") is not None:
+        notes.append(f"场均进球 {data['goals_per_match']}")
+    if data.get("shots_on_target_per_match") is not None:
+        notes.append(f"场均射正 {data['shots_on_target_per_match']}")
+    if data.get("xga") is not None:
+        notes.append(f"累计预期失球 {data['xga']}")
+    row["takeaway"] = "；".join(notes) if notes else "该数据为球队本届聚合统计，不等同于单场技术统计。"
+    return row
+
+
+def _fotmob_stats_for_team(team: str) -> dict | None:
+    with get_conn() as conn:
+        fm_id, fm_name = squads._get_fm_id(conn, team)
+    return fotmob.fetch_team_stats(fm_id, fm_name)
 
 
 def _profile_notes(home: str, away: str) -> list[str]:
@@ -127,6 +157,10 @@ def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH) -> dict:
             rows.append(_shooting_row(team, fbref.fetch_team_shooting(team)))
         except Exception as exc:
             errors.append(f"FBref {zh(team)}: {exc}")
+            try:
+                rows.append(_fotmob_stats_row(team, _fotmob_stats_for_team(team)))
+            except Exception as fm_exc:
+                errors.append(f"FotMob统计 {zh(team)}: {fm_exc}")
     rows = [r for r in rows if r]
     if rows:
         entry["prior_matches"] = rows

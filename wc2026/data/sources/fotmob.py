@@ -183,6 +183,41 @@ def fetch_team_formation(team_id: int, name_for_slug: str = "team") -> str | Non
         return None
 
 
+def fetch_team_stats(team_id: int, name_for_slug: str = "team") -> dict:
+    """球队 overview 页 → 本届赛事球队聚合统计。
+
+    返回字段为聚合值，不等同于单场技术统计。
+    """
+    r = _get(f"https://www.fotmob.com/teams/{team_id}/overview/{_slug(name_for_slug)}")
+    m = _NEXT_RE.search(r.text)
+    if not m:
+        raise FotmobError("未找到 __NEXT_DATA__（FotMob 页面结构可能已变）")
+    data = json.loads(m.group(1))
+    fallback = data.get("props", {}).get("pageProps", {}).get("fallback", {})
+    team = fallback.get(f"team-{team_id}", {})
+    rows = ((team.get("stats") or {}).get("teams") or [])
+
+    def val(stat_name: str):
+        for row in rows:
+            if row.get("stat") != stat_name:
+                continue
+            stat = ((row.get("participant") or {}).get("stat") or {})
+            return _to_float(stat.get("value"))
+        return None
+
+    possession = val("possession_percentage_team")
+    return {
+        "possession": possession / 100.0 if possession is not None else None,
+        "xg": val("expected_goals_team"),
+        "xga": val("expected_goals_conceded_team"),
+        "goals_per_match": val("goals_team_match"),
+        "goals_conceded_per_match": val("goals_conceded_team_match"),
+        "shots_on_target_per_match": val("ontarget_scoring_att_team"),
+        "set_piece_goals": val("_set_piece_goals_team"),
+        "source_url": r.url,
+    }
+
+
 def player_photo(player_id) -> str | None:
     return f"https://images.fotmob.com/image_resources/playerimages/{player_id}.png" if player_id else None
 

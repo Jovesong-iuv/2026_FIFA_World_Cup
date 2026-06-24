@@ -98,6 +98,34 @@ class MatchInsightsTest(unittest.TestCase):
             self.assertIn("本地球队画像", built["text"])
             self.assertIn("数据源提示", built["text"])
 
+    def test_refresh_match_insight_uses_fotmob_stats_when_fbref_is_blocked(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "match_insights.json"
+            with patch("wc2026.analysis.match_insights.fbref.fetch_team_shooting",
+                       side_effect=RuntimeError("HTTP 403")), \
+                    patch("wc2026.analysis.match_insights.fotmob.fetch_team_stats",
+                          side_effect=[
+                              {"possession": 0.651, "xg": 5.3, "xga": 0.8,
+                               "goals_per_match": 2.5, "shots_on_target_per_match": 7},
+                              {"possession": 0.70, "xg": 5.8, "xga": 1.2,
+                               "goals_per_match": 3.5, "shots_on_target_per_match": 7},
+                          ]), \
+                    patch("wc2026.analysis.match_insights.squads.refresh_fm_squad",
+                          return_value={"formation": "4-4-2", "injured": 0}), \
+                    patch("wc2026.analysis.match_insights.news.fetch_for_teams", return_value=[]):
+                res = refresh_match_insight("Switzerland", "Canada", path=path)
+
+            self.assertFalse(res["ok"])
+            built = build_match_analysis(
+                "Switzerland", "Canada", {"prediction": {}},
+                insights=__import__("json").loads(path.read_text(encoding="utf-8")),
+            )
+            self.assertTrue(built["available"])
+            self.assertIn("FotMob本届聚合", built["text"])
+            self.assertIn("65%控球", built["text"])
+            self.assertIn("约5.8预期进球", built["text"])
+            self.assertNotIn("瑞士首轮，65%控球", built["text"])
+
 
 if __name__ == "__main__":
     unittest.main()
