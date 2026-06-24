@@ -2356,12 +2356,15 @@ if action_button("🌐 联网补全分场分析数据", key=f"refresh_match_insi
                  help="尝试拉取 FBref 射门/xG、FotMob 阵容/阵型/伤停、新闻标题，并写入 data/match_insights.json"):
     with st.spinner("联网补全分场分析数据…"):
         _mi_res = _match_insights.refresh_match_insight(home, away)
+        _bridge_payload["match_analysis"] = _match_insights.build_match_analysis(
+            home, away, {"prediction": _bridge_payload.get("prediction", {})}
+        )
     if _mi_res["ok"]:
         st.success("分场分析数据已补全。")
     else:
         st.warning("已写入可获取的数据；部分来源失败：" + "；".join(_mi_res["errors"][:4]))
     st.cache_data.clear()
-    st.rerun()
+    st.cache_resource.clear()
 with st.expander("打开参考项目风格大屏（HTML / Canvas 桥接版）", expanded=True):
     st.caption("数据来自当前 Python 模型与 FastAPI 契约；UI 参考给到项目的玻璃态暗色仪表盘。人口/最佳成绩等静态资料来自 data/team_profiles.json。")
     render_bridge_dashboard(_bridge_payload)

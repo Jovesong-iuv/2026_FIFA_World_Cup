@@ -83,13 +83,20 @@ class MatchInsightsTest(unittest.TestCase):
             with patch("wc2026.analysis.match_insights.fbref.fetch_team_shooting",
                        side_effect=RuntimeError("fbref down")), \
                     patch("wc2026.analysis.match_insights.squads.refresh_fm_squad",
-                          return_value={"formation": "4-3-3", "injured": 0}), \
+                          side_effect=RuntimeError("fotmob down")), \
                     patch("wc2026.analysis.match_insights.news.fetch_for_teams", return_value=[]):
-                res = refresh_match_insight("A", "B", path=path)
+                res = refresh_match_insight("Spain", "Saudi Arabia", path=path)
 
             self.assertFalse(res["ok"])
             self.assertIn("FBref", " ".join(res["errors"]))
             self.assertTrue(path.exists())
+            built = build_match_analysis(
+                "Spain", "Saudi Arabia", {"prediction": {}},
+                insights=__import__("json").loads(path.read_text(encoding="utf-8")),
+            )
+            self.assertTrue(built["available"])
+            self.assertIn("本地球队画像", built["text"])
+            self.assertIn("数据源提示", built["text"])
 
 
 if __name__ == "__main__":

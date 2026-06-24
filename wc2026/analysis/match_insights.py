@@ -88,6 +88,27 @@ def _shooting_row(team: str, data: dict | None) -> dict | None:
     return row
 
 
+def _profile_notes(home: str, away: str) -> list[str]:
+    try:
+        profiles = json.loads((settings.data_dir / "team_profiles.json").read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    notes = []
+    for team in (home, away):
+        p = profiles.get(team) or {}
+        style = p.get("style_detail") or p.get("background")
+        formation = p.get("formation")
+        if style or formation:
+            prefix = f"{zh(team)}本地球队画像"
+            if formation and style:
+                notes.append(f"{prefix}：{formation}，{style}。")
+            elif formation:
+                notes.append(f"{prefix}：预计阵型 {formation}。")
+            else:
+                notes.append(f"{prefix}：{style}。")
+    return notes
+
+
 def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH) -> dict:
     """联网补全本场分场分析缓存。
 
@@ -133,6 +154,10 @@ def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH) -> dict:
 
     if tactical_notes:
         entry["tactical_notes"] = tactical_notes
+    else:
+        fallback_notes = _profile_notes(home, away)
+        if fallback_notes:
+            entry["tactical_notes"] = fallback_notes
     if availability_notes:
         entry["availability_notes"] = availability_notes
     entry.setdefault("market_view", {})
@@ -163,6 +188,8 @@ def build_match_analysis(home: str, away: str, report: dict, insights: dict | No
     parts = [_prior_sentence(r) for r in entry.get("prior_matches", [])]
     parts += [n.rstrip("。") + "。" for n in entry.get("availability_notes", [])]
     parts += [n.rstrip("。") + "。" for n in entry.get("tactical_notes", [])]
+    if entry.get("refresh_errors"):
+        parts.append("数据源提示：" + "；".join(entry["refresh_errors"][:3]) + "。")
 
     market_view = entry.get("market_view", {})
     home_zh = zh(home)
