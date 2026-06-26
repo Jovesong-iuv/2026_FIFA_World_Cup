@@ -1536,6 +1536,133 @@ def render_home(model) -> None:
                "单场详情页可查看完整价值判断与爆冷因子。")
 
 
+def render_team_query(model) -> None:
+    from wc2026.analysis import team_query
+    from wc2026.data import squads as squads_mod
+    from wc2026.data.flags import flag_emoji
+    from wc2026.data.sources import fotmob as fotmob_mod
+
+    render_hero("球队查询", "单队排名、近况、阵容、新闻与轮换风险", "TEAM LOOKUP")
+    teams = sorted(model.teams, key=zh)
+    c1, c2 = st.columns([1.2, 2])
+    selected = c1.selectbox("选择球队", teams, format_func=lambda t: f"{flag_emoji(t)} {zh(t)}")
+    query = c2.text_input("快速搜索（中 / 英文）", key="team_lookup_q").strip().lower()
+    if query:
+        filtered = [t for t in teams if query in t.lower() or query in zh(t).lower()]
+        if filtered:
+            selected = c1.selectbox("搜索结果", filtered, format_func=lambda t: f"{flag_emoji(t)} {zh(t)}",
+                                    key="team_lookup_filtered")
+        else:
+            st.warning("未找到匹配球队，当前展示下拉选择的球队。")
+
+    snap = team_query.build_team_snapshot(model, selected, fixtures)
+    prof = snap["profile"]
+    st.markdown(f"### {flag_emoji(selected)} {snap['team_cn']}")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("世界排名", f"#{snap['rank'] or '—'}", snap["rank_source"] or "无来源")
+    m2.metric("本届战绩", f"{snap['current_record']['w']}-{snap['current_record']['d']}-{snap['current_record']['l']}")
+    m3.metric("本届进/失", f"{snap['current_record']['gf']}/{snap['current_record']['ga']}")
+    m4.metric("常用阵型", prof.get("formation") or "—")
+    st.caption(f"排名来源：{snap['rank_source'] or '—'}"
+               f"{(' · ' + snap['ranking_date']) if snap.get('ranking_date') else ''}。"
+               "本页仅查询展示，新闻轮换信息不会写入模型强弱修正。")
+
+    left, right = st.columns([1.1, 1])
+    with left:
+        st.markdown("**球队画像**")
+        st.write(prof.get("style_detail") or "暂无画像。")
+        details = []
+        if prof.get("best_achievement"):
+            details.append({"项目": "世界杯最佳成绩", "内容": prof["best_achievement"]})
+        if prof.get("wc_appearances"):
+            details.append({"项目": "世界杯届数", "内容": prof["wc_appearances"]})
+        if prof.get("training_base"):
+            details.append({"项目": "训练基地", "内容": prof["training_base"]})
+        if prof.get("key_players"):
+            details.append({"项目": "关键球员", "内容": "、".join(prof["key_players"])})
+        if details:
+            st.dataframe(pd.DataFrame(details), hide_index=True, width="stretch")
+    with right:
+        st.markdown("**本届已赛记录**")
+        rec = snap["current_record"]
+        if rec["recent"]:
+            st.dataframe(pd.DataFrame([{
+                "日期": r["date"], "对手": r["opponent_cn"],
+                "比分": r["score"], "结果": r["outcome"], "阶段": r["group"],
+            } for r in rec["recent"]]), hide_index=True, width="stretch")
+        else:
+            st.caption("本届暂无已完赛记录。")
+
+    st.markdown("**历史近况（本地历史库）**")
+    rf = snap["recent_form"]
+    st.caption(f"最近 {rf['n']} 场：{rf['w']}胜 {rf['d']}平 {rf['l']}负，进 {rf['gf']} / 失 {rf['ga']}。")
+    if rf["matches"]:
+        st.dataframe(pd.DataFrame([{
+            "日期": r["date"], "主客": r["ha"], "对手": zh(r["opponent"]),
+            "比分": r["score"], "结果": r["outcome"],
+        } for r in rf["matches"]]), hide_index=True, width="stretch")
+
+    with st.expander("联网补充：FotMob 阵容 / 本届聚合统计 / 新闻", expanded=True):
+        cstat, csquad, cnews = st.columns(3)
+        if action_button("📊 拉取本届聚合统计", key=f"team_stats:{selected}"):
+            try:
+                with st.spinner("从 FotMob 拉取球队统计…"):
+                    with get_conn() as conn:
+                        fm_id, fm_name = squads_mod._get_fm_id(conn, selected)
+                    st.session_state[f"team_stats_data:{selected}"] = fotmob_mod.fetch_team_stats(fm_id, fm_name)
+                st.success("已更新本届聚合统计。")
+            except Exception as exc:
+                st.error(f"统计拉取失败：{exc}")
+        stats = st.session_state.get(f"team_stats_data:{selected}")
+        if stats:
+            cstat.metric("控球率", f"{stats['possession']:.0%}" if stats.get("possession") is not None else "—")
+            cstat.metric("累计 xG", f"{stats['xg']:.1f}" if stats.get("xg") is not None else "—")
+            cstat.metric("累计 xGA", f"{stats['xga']:.1f}" if stats.get("xga") is not None else "—")
+            st.caption("FotMob 本届聚合统计，不等同于单场技术统计。")
+
+        if action_button("👥 拉取阵容 / 伤停", key=f"team_squad:{selected}"):
+            try:
+                with st.spinner("从 FotMob 拉取阵容…"):
+                    res = squads_mod.refresh_fm_squad(selected)
+                st.success(f"已更新：{res['count']} 人，伤停/缺阵 {res['injured']}，最近阵型 {res.get('formation') or '—'}。")
+            except Exception as exc:
+                st.error(f"阵容拉取失败：{exc}")
+        sq = squads_mod.load_fm_squad(selected)
+        if sq:
+            csquad.metric("最近阵型", sq.get("formation") or "—")
+            injured = [p for players in sq["groups"].values() for p in players if p.get("injured")]
+            csquad.metric("伤停/缺阵", len(injured))
+            if injured:
+                st.dataframe(pd.DataFrame([{
+                    "球员": p.get("name_zh") or p["player_name"],
+                    "位置": squads_mod.POS_ZH.get(p.get("position"), p.get("position")),
+                    "说明": p.get("injury_note") or "伤停/缺阵",
+                } for p in injured]), hide_index=True, width="stretch")
+
+        news_key = f"team_news_data:{selected}"
+        if action_button("📰 拉取球队新闻", key=f"team_news:{selected}"):
+            try:
+                with st.spinner("联网抓取球队新闻…"):
+                    st.session_state[news_key] = news_mod.fetch_for_teams([selected], limit=8)
+                st.success("新闻已更新。")
+            except Exception as exc:
+                st.error(f"新闻拉取失败：{exc}")
+        items = st.session_state.get(news_key) or []
+        rot = team_query.rotation_signals(items)
+        cnews.metric("新闻条数", len(items))
+        cnews.metric("轮换信号", "有" if rot["detected"] else "未见")
+        if rot["detected"]:
+            st.warning(rot["policy"])
+            st.dataframe(pd.DataFrame(rot["items"]), hide_index=True, width="stretch")
+        if items:
+            st.dataframe(pd.DataFrame([{
+                "来源": i.get("source", ""), "标题": i.get("title", ""),
+                "时间": i.get("pub", ""), "链接": i.get("link", ""),
+            } for i in items]), hide_index=True, width="stretch")
+        else:
+            st.caption("点击“拉取球队新闻”后显示；轮换/替补信息只作提示，不改变模型基础强弱。")
+
+
 def render_schedule(model) -> None:
     from wc2026.analysis import schedule as sch, ranking as rk
     from wc2026.data.flags import flag_emoji
@@ -1910,7 +2037,7 @@ render_hero(
     "比分概率、盘口价值、晋级之路与证据分析集中在一个可操作界面中。模型结论仅供参考，请理性参与并遵守当地法规。",
 )
 
-page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "大胆预测", "赛后复盘", "AI 分析师", "晋级之路"]
+page_options = ["首页", "小组赛赛程", "球队查询", "单场分析", "小组出线", "大胆预测", "赛后复盘", "AI 分析师", "晋级之路"]
 if is_owner():
     page_options.append("访问记录")
 if user["role"] == "admin":
@@ -1926,6 +2053,9 @@ if page == "访问记录":
     st.stop()
 if page == "小组赛赛程":
     render_schedule(model)
+    st.stop()
+if page == "球队查询":
+    render_team_query(model)
     st.stop()
 if page == "晋级之路":
     render_bracket(model)
