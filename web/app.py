@@ -1040,12 +1040,12 @@ th {{ color:var(--dim); font-size:12px; }}
   .gsa-grid,.gsa-r32-grid {{ grid-template-columns:1fr; }}
   .strat-scores {{ grid-template-columns:1fr; }}
 }}
-.back-to-top {{ position:fixed; right:28px; bottom:36px; width:44px; height:44px; border-radius:50%;
+.back-to-top {{ position:fixed; right:28px; top:50%; transform:translateY(-50%); width:44px; height:44px; border-radius:50%;
   background:rgba(59,130,246,.85); color:#fff; border:none; cursor:pointer; font-size:20px; line-height:44px;
   text-align:center; z-index:9999; opacity:0; pointer-events:none; transition:opacity .3s, transform .3s;
   box-shadow:0 4px 16px rgba(0,0,0,.35); backdrop-filter:blur(6px); }}
 .back-to-top.show {{ opacity:1; pointer-events:auto; }}
-.back-to-top:hover {{ background:rgba(59,130,246,1); transform:translateY(-3px); }}
+.back-to-top:hover {{ background:rgba(59,130,246,1); transform:translateY(-50%) scale(1.08); }}
 </style>
 </head>
 <body>
@@ -1237,14 +1237,53 @@ function drawDonut() {{
 }}
 $('#app').innerHTML = renderTeamComparison()+renderDimensions()+renderPrediction()+renderGroupStrategicAnalysis()+renderOdds()+renderSummary()+renderChampion();
 drawRadar(); drawDonut();
-window.addEventListener('scroll', function() {{
+(function() {{
+  var pDoc = null;
+  try {{ pDoc = window.parent.document; }} catch(e) {{}}
+
+  if (pDoc && !pDoc.getElementById('stBackTop')) {{
+    var pBtn = pDoc.createElement('button');
+    pBtn.id = 'stBackTop';
+    pBtn.innerHTML = '\u2191';
+    pBtn.title = '\u56de\u5230\u9876\u90e8';
+    var s = pBtn.style;
+    s.position = 'fixed'; s.right = '24px'; s.top = '50%';
+    s.transform = 'translateY(-50%)'; s.width = '46px'; s.height = '46px';
+    s.borderRadius = '50%'; s.cursor = 'pointer'; s.zIndex = '99999';
+    s.background = 'rgba(59,130,246,.9)'; s.color = '#fff'; s.border = 'none';
+    s.fontSize = '22px'; s.lineHeight = '46px'; s.textAlign = 'center';
+    s.boxShadow = '0 4px 16px rgba(0,0,0,.3)'; s.opacity = '0';
+    s.pointerEvents = 'none'; s.transition = 'opacity .3s, background .2s';
+    pDoc.body.appendChild(pBtn);
+
+    pBtn.addEventListener('click', function() {{
+      try {{ window.parent.scrollTo({{ top: 0, behavior: 'smooth' }}); }} catch(e) {{}}
+    }});
+    pBtn.addEventListener('mouseenter', function() {{ pBtn.style.background = 'rgba(59,130,246,1)'; }});
+    pBtn.addEventListener('mouseleave', function() {{ pBtn.style.background = 'rgba(59,130,246,.9)'; }});
+
+    var pWin = window.parent;
+    pWin.addEventListener('scroll', function() {{
+      if (pWin.scrollY > 400) {{ pBtn.style.opacity = '1'; pBtn.style.pointerEvents = 'auto'; }}
+      else {{ pBtn.style.opacity = '0'; pBtn.style.pointerEvents = 'none'; }}
+    }});
+  }}
+
   var btn = document.getElementById('backTop');
-  if (window.scrollY > 400) {{ btn.classList.add('show'); }}
-  else {{ btn.classList.remove('show'); }}
-}});
-document.getElementById('backTop').addEventListener('click', function() {{
-  window.scrollTo({{ top: 0, behavior: 'smooth' }});
-}});
+  if (btn) {{
+    if (pDoc && pDoc.getElementById('stBackTop')) {{
+      btn.style.display = 'none';
+    }} else {{
+      btn.addEventListener('click', function() {{
+        window.scrollTo({{ top: 0, behavior: 'smooth' }});
+      }});
+      window.addEventListener('scroll', function() {{
+        if (window.scrollY > 400) btn.classList.add('show');
+        else btn.classList.remove('show');
+      }});
+    }}
+  }}
+}})();
 </script>
 </body>
 </html>
