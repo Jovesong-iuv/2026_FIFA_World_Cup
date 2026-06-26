@@ -486,6 +486,265 @@ def render_top_nav(page_options: list[str]) -> str:
     return page
 
 
+def _build_group_strategic_analysis(model, home: str, away: str,
+                                    fixture: dict | None, fixtures: list) -> dict:
+    """构建小组赛深度战略分析：出线形势 + R32对位 + 战略考量 + 跨组联动。"""
+    from wc2026.analysis import groups as _grp, tournament as _tour
+    from wc2026.data.flags import flag_emoji as _flag
+    from wc2026.data.team_names import zh as _zh
+
+    gd = _grp.load_group_data(model)
+    if not gd:
+        return {"available": False, "text": "暂无小组赛数据"}
+
+    standings = _grp.compute_standings(gd)
+
+    # 蒙特卡洛模拟（缓存）
+    try:
+        sig = _grp.played_signature(gd)
+        key = f"gsa_sim:{hash(sig)}"
+        if key not in st.session_state:
+            st.session_state[key] = _grp.simulate_groups(model, gd, n_sims=2000)
+        sim = st.session_state[key]
+    except Exception:
+        sim = {}
+
+    r32 = _tour.R32_SLOTS
+
+    def _group_of(team):
+        for gname, data in gd.items():
+            if team in data["teams"]:
+                return gname
+        return None
+
+    def _team_sim(team):
+        for rows in sim.values():
+            for r in rows:
+                if r["team"] == team:
+                    return r
+        return {}
+
+    def _team_row(team, gname):
+        for r in standings.get(gname, []):
+            if r["team"] == team:
+                return r
+        return None
+
+    def _parse_slot(code):
+        if code.startswith("3"):
+            gl = list(code[1:])
+            return {"type": "third", "desc": f"最佳第三({'/'.join(gl)}组)", "groups": gl}
+        if code.startswith("1"):
+            g = code[1:]
+            return {"type": "winner", "desc": f"{g}组头名", "group": g}
+        if code.startswith("2"):
+            g = code[1:]
+            return {"type": "runner_up", "desc": f"{g}组次名", "group": g}
+        return {"type": "unknown", "desc": code}
+
+    def _slot_proj(code):
+        """投影 slot 对应的最可能球队。"""
+        if code.startswith("3"):
+            best_t, best_p = None, 0
+            for g in code[1:]:
+                for r in sim.get(f"Group {g}", []):
+                    if r.get("third_advance", 0) > best_p:
+                        best_p = r["third_advance"]
+                        best_t = r["team"]
+            return best_t, best_p
+        if code.startswith("1"):
+            g = code[1:]
+            rows = sim.get(f"Group {g}", [])
+            if rows:
+                b = max(rows, key=lambda r: r.get("first", 0))
+                return b["team"], b.get("first", 0)
+        if code.startswith("2"):
+            g = code[1:]
+            rows = sim.get(f"Group {g}", [])
+            if rows:
+                b = max(rows, key=lambda r: r.get("top2", 0) - r.get("first", 0))
+                return b["team"], b.get("top2", 0) - b.get("first", 0)
+        return None, 0
+
+    def _find_r32(gletter, pos):
+        """查找某组某名次对应的 R32 对阵信息。"""
+        code = f"{pos}{gletter}"
+        for idx, (h, a) in enumerate(r32):
+            mn = 73 + idx
+            if h == code or a == code:
+                opp = a if h == code else h
+                opp_info = _parse_slot(opp)
+                opp_t, opp_p = _slot_proj(opp)
+                return {
+                    "match_num": mn,
+                    "my_slot": code,
+                    "opponent_slot": opp,
+                    "opponent_desc": opp_info["desc"],
+                    "opponent_team": opp_t,
+                    "opponent_team_cn": _zh(opp_t) if opp_t else "待定",
+                    "opponent_flag": _flag(opp_t) if opp_t else "",
+                    "opponent_prob": round(opp_p, 3),
+                }
+        return None
+
+    def _standings_json(gname):
+        return [{
+            "team": r["team"], "team_cn": _zh(r["team"]),
+            "flag": _flag(r["team"]), "rank": r["rank"],
+            "pts": r["pts"], "gd": r["gd"], "gf": r["gf"], "ga": r["ga"],
+            "played": r["played"], "w": r["w"], "d": r["d"], "l": r["l"],
+        } for r in standings.get(gname, [])]
+
+    def _elo(team):
+        try:
+            return model.elo.ratings.get(team, 1500)
+        except Exception:
+            return 1500
+
+    def _build_one(team):
+        gname = _group_of(team)
+        if not gname:
+            return None
+        gl = gname.replace("Group ", "")
+        row = _team_row(team, gname)
+        sprobs = _team_sim(team)
+        return {
+            "team": team, "team_cn": _zh(team), "flag": _flag(team),
+            "group": gname, "group_letter": gl,
+            "standings": _standings_json(gname),
+            "rank": row["rank"] if row else None,
+            "pts": row["pts"] if row else 0,
+            "gd": row["gd"] if row else 0,
+            "gf": row["gf"] if row else 0,
+            "ga": row["ga"] if row else 0,
+            "played": row["played"] if row else 0,
+            "w": row["w"] if row else 0,
+            "d": row["d"] if row else 0,
+            "l": row["l"] if row else 0,
+            "sim_first": round(sprobs.get("first", 0), 3),
+            "sim_top2": round(sprobs.get("top2", 0), 3),
+            "sim_qualify": round(sprobs.get("qualify", 0), 3),
+            "sim_third": round(sprobs.get("third", 0), 3),
+            "r32_first": _find_r32(gl, "1"),
+            "r32_second": _find_r32(gl, "2"),
+            "elo": _elo(team),
+        }
+
+    ha = _build_one(home)
+    aa = _build_one(away)
+    if not ha and not aa:
+        return {"available": False, "text": "当前比赛不涉及小组赛球队"}
+
+    # --- 生成战略分析文本 ---
+    notes = []
+
+    def _add(cat, text):
+        notes.append({"category": cat, "text": text})
+
+    _STAR = {"Argentina": "梅西", "France": "姆巴佩", "Norway": "哈兰德",
+             "Brazil": "维尼修斯", "England": "凯恩", "Portugal": "C罗",
+             "Spain": "亚马尔", "Germany": "穆西亚拉", "Netherlands": "德佩",
+             "Italy": "基耶萨", "Belgium": "德布劳内", "Croatia": "莫德里奇"}
+
+    for label, ta in [("主队", ha), ("客队", aa)]:
+        if not ta:
+            continue
+        cn = ta["team_cn"]
+        gl = ta["group_letter"]
+        pts = ta["pts"]
+        rk = ta["rank"]
+        sq = ta["sim_qualify"]
+        sf = ta["sim_first"]
+        gd = ta["gd"]
+        gf = ta["gf"]
+
+        # 出线形势
+        if sq > 0.9:
+            qual_text = f"{cn}（{gl}组）已基本确认出线，模拟出线概率 {sq:.0%}"
+        elif sq > 0.6:
+            qual_text = f"{cn}（{gl}组）出线形势较好，模拟出线概率 {sq:.0%}"
+        elif sq > 0.3:
+            qual_text = f"{cn}（{gl}组）出线形势不明朗，模拟出线概率 {sq:.0%}"
+        else:
+            qual_text = f"{cn}（{gl}组）出线形势危急，模拟出线概率仅 {sq:.0%}"
+
+        if rk:
+            qual_text += f"，当前排名第{rk}（{pts}分，净胜球{'+' if gd >= 0 else ''}{gd}，进{gf}球）"
+        if sf > 0.7:
+            qual_text += f"，头名概率 {sf:.0%}"
+        elif sf > 0.3:
+            qual_text += f"，头名概率 {sf:.0%}，仍有争首机会"
+        _add("出线形势", qual_text)
+
+        # R32 对位
+        r1 = ta.get("r32_first")
+        r2 = ta.get("r32_second")
+        if r1:
+            r32_text = f"若以头名出线 → 第{r1['match_num']}场 vs {r1['opponent_desc']}"
+            if r1.get("opponent_team_cn") and r1["opponent_team_cn"] != "待定":
+                r32_text += f"（投影：{r1['opponent_flag']} {r1['opponent_team_cn']} {r1['opponent_prob']:.0%}）"
+            _add("R32对位", r32_text)
+        if r2:
+            r32_text = f"若以次名出线 → 第{r2['match_num']}场 vs {r2['opponent_desc']}"
+            if r2.get("opponent_team_cn") and r2["opponent_team_cn"] != "待定":
+                r32_text += f"（投影：{r2['opponent_flag']} {r2['opponent_team_cn']} {r2['opponent_prob']:.0%}）"
+            _add("R32对位", r32_text)
+
+        # 战略考量：R32 对手实力分析
+        likely_first = sf > 0.5
+        r_proj = r1 if likely_first else r2
+        if r_proj and r_proj.get("opponent_team"):
+            opp_elo = _elo(r_proj["opponent_team"])
+            opp_cn = r_proj["opponent_team_cn"]
+            if opp_elo > 1850:
+                _add("战略考量", f"{cn}{'大概率头名' if likely_first else '可能次名'}出线，32强投影对手 {opp_cn} 实力较强（Elo {opp_elo:.0f}），相关小组末轮排名变化需密切关注")
+            elif opp_elo < 1600:
+                _add("战略考量", f"{cn}{'大概率头名' if likely_first else '可能次名'}出线，32强投影对手 {opp_cn} 实力一般（Elo {opp_elo:.0f}），出线后赛程相对有利")
+
+        # 战略考量：出线已定 vs 需要拼争
+        if sq > 0.9 and ta["played"] >= 2:
+            if sf > 0.8:
+                _add("战略考量", f"{cn}已确认出线且大概率锁定头名，末轮可能轮换主力保存体能，但需权衡头名归属以确保淘汰赛有利对阵")
+            else:
+                _add("战略考量", f"{cn}已确认出线但头名尚未锁定，末轮仍需积极争胜以确保头名，获得更有利的32强对阵")
+        elif sq < 0.4 and ta["played"] >= 2:
+            _add("战略考量", f"{cn}出线形势危急，本场必须全力争胜，战意极高")
+
+        # 进球动机
+        if sq > 0.9 and sf > 0.7:
+            star = _STAR.get(ta["team"])
+            if star:
+                _add("进球动机", f"{cn}已基本锁定出线，{star}可能为争夺金靴奖而寻求进球，进球数可能偏高")
+
+    # 同组对决 / 跨组联动
+    if ha and aa and ha["group"] == aa["group"]:
+        gl = ha["group_letter"]
+        _add("同组对决", f"双方同处{gl}组，本场结果直接决定小组排名与出线归属，胜者占据主动权")
+        if ha["sim_qualify"] > 0.8 and aa["sim_qualify"] > 0.8:
+            _add("同组对决", f"双方均已接近出线，本场可能演变为争夺头名之战，平局亦可接受的情况下战意可能降低")
+    elif ha and aa:
+        for ta in [ha, aa]:
+            r1 = ta.get("r32_first")
+            if r1 and r1.get("opponent_slot", "").startswith("3"):
+                _add("跨组联动", f"{ta['team_cn']}若头名出线，对手来自{r1['opponent_desc']}，相关小组末轮结果将直接影响32强对位")
+            r2 = ta.get("r32_second")
+            if r2 and r2.get("opponent_slot", "").startswith("2"):
+                opp_g = r2["opponent_slot"][1:]
+                _add("跨组联动", f"{ta['team_cn']}若次名出线，将对阵 {opp_g}组次名，{opp_g}组末轮排名同样关键")
+    elif ha:
+        for ta in [ha]:
+            r1 = ta.get("r32_first")
+            if r1 and r1.get("opponent_slot", "").startswith("3"):
+                _add("跨组联动", f"{ta['team_cn']}若头名出线，对手来自{r1['opponent_desc']}，相关小组末轮结果将直接影响32强对位")
+
+    return {
+        "available": True,
+        "home": ha,
+        "away": aa,
+        "notes": notes,
+    }
+
+
 def render_bridge_dashboard(payload: dict) -> None:
     """Embed the reference-style HTML dashboard with current project data."""
     import json
@@ -588,10 +847,39 @@ th {{ color:var(--dim); font-size:12px; }}
 .champ-row {{ display:grid; grid-template-columns:36px 1fr 80px; gap:10px; align-items:center; margin:10px 0; }}
 .champ-bar {{ height:10px; border-radius:999px; background:rgba(255,255,255,.06); overflow:hidden; }}
 .champ-fill {{ height:100%; background:linear-gradient(90deg,var(--blue),var(--gold)); border-radius:999px; }}
+.gsa-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; padding:20px; }}
+.gsa-team-box {{ padding:16px; border-radius:14px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); }}
+.gsa-team-head {{ display:flex; align-items:center; gap:8px; margin-bottom:12px; }}
+.gsa-team-head .flag {{ font-size:28px; }}
+.gsa-team-head b {{ font-size:18px; }}
+.gsa-group-tag {{ margin-left:auto; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:800; background:rgba(59,130,246,.18); color:#93c5fd; }}
+.gsa-probs {{ margin-bottom:14px; }}
+.gsa-prob-row {{ display:grid; grid-template-columns:48px 1fr 48px; gap:8px; align-items:center; margin:5px 0; color:var(--muted); font-size:12px; }}
+.gsa-prob-bar {{ height:8px; border-radius:999px; background:rgba(255,255,255,.07); overflow:hidden; }}
+.gsa-fill {{ height:100%; border-radius:999px; }}
+.gsa-prob-row b {{ text-align:right; font-size:13px; color:var(--text); }}
+.gsa-section-title {{ font-size:13px; font-weight:800; color:var(--gold); margin:10px 0 6px; }}
+.gsa-table {{ width:100%; border-collapse:collapse; font-size:12px; }}
+.gsa-table th {{ color:var(--dim); padding:4px 3px; text-align:center; font-size:11px; border-bottom:1px solid rgba(255,255,255,.08); }}
+.gsa-table td {{ padding:4px 3px; text-align:center; border-bottom:1px solid rgba(255,255,255,.04); }}
+.gsa-table tr.highlight td {{ background:rgba(59,130,246,.12); color:#93c5fd; font-weight:800; }}
+.gsa-r32-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }}
+.gsa-r32-item {{ padding:10px; border-radius:10px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); }}
+.gsa-r32-cond {{ font-size:11px; color:var(--gold); font-weight:800; }}
+.gsa-r32-match {{ font-size:12px; color:var(--muted); margin:2px 0; }}
+.gsa-r32-opp {{ font-size:13px; font-weight:700; }}
+.gsa-r32-proj {{ font-size:12px; color:var(--muted); margin-top:3px; }}
+.gsa-r32-proj.muted {{ color:var(--dim); }}
+.gsa-prob-tag {{ padding:1px 6px; border-radius:999px; font-size:10px; background:rgba(245,158,11,.15); color:#ffd58a; }}
+.gsa-notes {{ padding:0 20px 20px; }}
+.gsa-note {{ display:grid; grid-template-columns:88px 1fr; gap:10px; padding:8px 0; border-bottom:1px solid rgba(255,255,255,.05); }}
+.gsa-note-cat {{ color:var(--gold); font-weight:800; font-size:12px; }}
+.gsa-note-text {{ color:var(--muted); font-size:13px; line-height:1.6; }}
 @media(max-width:760px) {{
   .wrap {{ padding:12px; }} .team-card,.grid2,.prob-grid,.records,.summary {{ grid-template-columns:1fr; padding:16px; }}
   .vs {{ display:none; }} .score {{ font-size:44px; }} .info-row {{ grid-template-columns:92px 1fr; }}
   .guide-list,.lambda-panel,.margin-grid {{ grid-template-columns:1fr; }}
+  .gsa-grid,.gsa-r32-grid {{ grid-template-columns:1fr; }}
 }}
 </style>
 </head>
@@ -705,6 +993,60 @@ function renderChampion() {{
   const max = rows[0]?.champion || 1;
   return `<div class="card champ"><h2>夺冠概率排名</h2>${{rows.map((r,i)=>`<div class="champ-row"><div>${{i+1}}</div><div><b>${{r.flag}} ${{r.team_cn}}</b><div class="champ-bar"><div class="champ-fill" style="width:${{Math.max(2,r.champion/max*100)}}%"></div></div></div><div>${{pct(r.champion,1)}}</div></div>`).join('')}}</div>`;
 }}
+function renderGroupStrategicAnalysis() {{
+  const gsa = DATA.group_strategic_analysis;
+  if (!gsa || !gsa.available) return '';
+  function sTable(rows, hl) {{
+    if (!rows || !rows.length) return '<p class="note">暂无积分数据</p>';
+    let h = '<table class="gsa-table"><thead><tr><th>#</th><th>队</th><th>赛</th><th>胜</th><th>平</th><th>负</th><th>进/失</th><th>净</th><th>分</th></tr></thead><tbody>';
+    rows.forEach(r => {{
+      const c = r.team === hl ? 'highlight' : '';
+      h += `<tr class="${{c}}"><td>${{r.rank||'—'}}</td><td>${{r.flag}} ${{r.team_cn}}</td><td>${{r.played}}</td><td>${{r.w}}</td><td>${{r.d}}</td><td>${{r.l}}</td><td>${{r.gf}}/${{r.ga}}</td><td>${{r.gd>0?'+':''}}${{r.gd}}</td><td><b>${{r.pts}}</b></td></tr>`;
+    }});
+    return h + '</tbody></table>';
+  }}
+  function tBox(t) {{
+    if (!t) return '';
+    let h = `<div class="gsa-team-box">`;
+    h += `<div class="gsa-team-head"><span class="flag">${{t.flag}}</span><b>${{t.team_cn}}</b><span class="gsa-group-tag">${{t.group_letter}}组</span></div>`;
+    h += `<div class="gsa-probs">`;
+    h += `<div class="gsa-prob-row"><span>出线</span><div class="gsa-prob-bar"><div class="gsa-fill" style="width:${{Math.round(t.sim_qualify*100)}}%;background:#10b981"></div></div><b>${{pct(t.sim_qualify)}}</b></div>`;
+    h += `<div class="gsa-prob-row"><span>头名</span><div class="gsa-prob-bar"><div class="gsa-fill" style="width:${{Math.round(t.sim_first*100)}}%;background:#3b82f6"></div></div><b>${{pct(t.sim_first)}}</b></div>`;
+    h += `</div>`;
+    h += `<div class="gsa-section-title">小组积分榜</div>`;
+    h += sTable(t.standings, t.team);
+    h += `<div class="gsa-section-title">32强对位投影</div><div class="gsa-r32-grid">`;
+    if (t.r32_first) {{
+      const r = t.r32_first;
+      h += `<div class="gsa-r32-item"><div class="gsa-r32-cond">若头名出线</div><div class="gsa-r32-match">第${{r.match_num}}场</div><div class="gsa-r32-opp">${{r.opponent_desc}}</div>`;
+      if (r.opponent_team_cn && r.opponent_team_cn !== '待定') {{
+        h += `<div class="gsa-r32-proj">${{r.opponent_flag}} ${{r.opponent_team_cn}} <span class="gsa-prob-tag">${{pct(r.opponent_prob)}}</span></div>`;
+      }} else {{
+        h += `<div class="gsa-r32-proj muted">待定</div>`;
+      }}
+      h += `</div>`;
+    }}
+    if (t.r32_second) {{
+      const r = t.r32_second;
+      h += `<div class="gsa-r32-item"><div class="gsa-r32-cond">若次名出线</div><div class="gsa-r32-match">第${{r.match_num}}场</div><div class="gsa-r32-opp">${{r.opponent_desc}}</div>`;
+      if (r.opponent_team_cn && r.opponent_team_cn !== '待定') {{
+        h += `<div class="gsa-r32-proj">${{r.opponent_flag}} ${{r.opponent_team_cn}} <span class="gsa-prob-tag">${{pct(r.opponent_prob)}}</span></div>`;
+      }} else {{
+        h += `<div class="gsa-r32-proj muted">待定</div>`;
+      }}
+      h += `</div>`;
+    }}
+    h += `</div></div>`;
+    return h;
+  }}
+  let nHtml = '';
+  if (gsa.notes && gsa.notes.length) {{
+    nHtml = '<div class="gsa-notes">' + gsa.notes.map(n =>
+      `<div class="gsa-note"><span class="gsa-note-cat">${{n.category}}</span><span class="gsa-note-text">${{esc(n.text)}}</span></div>`
+    ).join('') + '</div>';
+  }}
+  return `<div class="card"><div class="title"><div><h2>小组赛深度战略分析</h2><p>出线形势 · 32强对位 · 战略考量 · 跨组联动 · 进球动机</p></div></div><div class="gsa-grid">${{tBox(gsa.home)}}${{tBox(gsa.away)}}</div>${{nHtml}}</div>`;
+}}
 function drawRadar() {{
   const c = $('#radar'); if(!c) return; const ctx=c.getContext('2d'), W=c.width,H=c.height,cx=W/2,cy=H/2,R=120;
   const dims=DATA.dimensions, keys=Object.keys(dims.team_a||{{}}), labels=keys.map(k=>dims.labels[k]||k);
@@ -718,13 +1060,13 @@ function drawDonut() {{
   const c=$('#donut'); if(!c) return; const ctx=c.getContext('2d'), p=DATA.prediction, vals=[p.team_a_win_prob,p.draw_prob,p.team_b_win_prob], cols=['#3b82f6','#f59e0b','#ef4444'];
   let start=-Math.PI/2; vals.forEach((v,i)=>{{ ctx.beginPath(); ctx.moveTo(130,130); ctx.arc(130,130,112,start,start+v*Math.PI*2); ctx.closePath(); ctx.fillStyle=cols[i]; ctx.fill(); start+=v*Math.PI*2; }}); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(130,130,72,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over';
 }}
-$('#app').innerHTML = renderTeamComparison()+renderDimensions()+renderPrediction()+renderOdds()+renderSummary()+renderChampion();
+$('#app').innerHTML = renderTeamComparison()+renderDimensions()+renderPrediction()+renderGroupStrategicAnalysis()+renderOdds()+renderSummary()+renderChampion();
 drawRadar(); drawDonut();
 </script>
 </body>
 </html>
 """
-    components.html(html, height=1850, scrolling=True)
+    components.html(html, height=2500, scrolling=True)
 
 
 def require_login() -> dict:
@@ -2434,6 +2776,9 @@ if action_button("🌐 联网补全分场分析数据", key=f"refresh_match_insi
         st.warning("已写入可获取的数据；部分来源失败：" + "；".join(_mi_res["errors"][:4]))
     st.cache_data.clear()
     st.cache_resource.clear()
+# 注入小组赛深度战略分析（出线形势 + R32对位 + 战略考量）
+_bridge_payload["group_strategic_analysis"] = _build_group_strategic_analysis(
+    model, home, away, selected_fixture, fixtures)
 with st.expander("打开参考项目风格大屏（HTML / Canvas 桥接版）", expanded=True):
     st.caption("数据来自当前 Python 模型与 FastAPI 契约；UI 参考给到项目的玻璃态暗色仪表盘。人口/最佳成绩等静态资料来自 data/team_profiles.json。")
     render_bridge_dashboard(_bridge_payload)

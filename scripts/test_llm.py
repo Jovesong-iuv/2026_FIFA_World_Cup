@@ -23,9 +23,9 @@ def main() -> None:
         print("✅ LLM 可用，理由/资讯分析将自动启用。")
     except provider.LLMError as exc:
         print("❌ 不可用：", exc)
-        print("排查：1) anyrouter 后台开通 1m 上下文/确认余额；")
-        print("      2) 或改用 OpenAI 兼容模型(DeepSeek/MiMo)：")
-        print("         .env 设 LLM_PROVIDER=openai、LLM_BASE_URL=厂商地址、LLM_MODEL=模型名、LLM_API_KEY=对应key。")
+        print("排查：1) 确认 DeepSeek API key 有效且账号余额充足；")
+        print("      2) 确认 .env 使用 LLM_PROVIDER=openai、LLM_BASE_URL=https://api.deepseek.com、")
+        print("         LLM_MODEL=deepseek-v4-flash、LLM_API_KEY=对应 key。")
 
 
 if __name__ == "__main__":

@@ -92,7 +92,7 @@ DATABASE_URL=sqlite:///data/wc2026.db
 LLM_ENABLED=false
 ```
 
-需要 AI 理由或赔率扫描时，再填写 `LLM_API_KEY`、`LLM_BASE_URL`、`ODDS_API_KEY`。
+需要 AI 理由或赔率扫描时，再填写 `LLM_API_KEY`、`LLM_BASE_URL`、`ODDS_API_KEY`。DeepSeek 可使用 `LLM_PROVIDER=openai`、`LLM_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-v4-flash`。
 
 ### 3. 本地 Python 启动
 
@@ -334,10 +334,10 @@ docker compose logs -f web
 
 ```env
 LLM_ENABLED=true
-LLM_PROVIDER=anthropic
-LLM_BASE_URL=https://your-api-host
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://api.deepseek.com
 LLM_API_KEY=your-key
-LLM_MODEL=your-model
+LLM_MODEL=deepseek-v4-flash
 ```
 
 未配置 LLM 时，系统会自动降级为规则模板理由，核心预测不受影响。

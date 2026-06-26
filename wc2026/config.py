@@ -46,10 +46,10 @@ class Settings:
 
     # LLM（可选增强）
     llm_enabled: bool = _flag("LLM_ENABLED", "true")
-    llm_provider: str = _env_or_secret("LLM_PROVIDER", "anthropic")
-    llm_base_url: str = _env_or_secret("LLM_BASE_URL", "")
+    llm_provider: str = _env_or_secret("LLM_PROVIDER", "openai")
+    llm_base_url: str = _env_or_secret("LLM_BASE_URL", "https://api.deepseek.com")
     llm_api_key: str = _env_or_secret("LLM_API_KEY", "")
-    llm_model: str = _env_or_secret("LLM_MODEL", "claude-opus-4-8")
+    llm_model: str = _env_or_secret("LLM_MODEL", "deepseek-v4-flash")
     llm_anthropic_beta: str = _env_or_secret("LLM_ANTHROPIC_BETA", "")
     llm_timeout: float = float(_env_or_secret("LLM_TIMEOUT", "45"))
 
