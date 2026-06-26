@@ -1037,19 +1037,22 @@ def render_bracket(model) -> None:
             return "", _slot_proj(src)
         return "", "待定"
 
-    # --- 坐标 ---
-    BW, BH = 140, 56
-    R32_Y = [25 + i * 90 for i in range(8)]
+    # --- 坐标参数 ---
+    BW, BH = 160, 64
+    R32_Y = [50 + i * 100 for i in range(8)]
     R16_Y = [(R32_Y[i] + R32_Y[i + 1]) / 2 for i in range(0, 8, 2)]
     QF_Y = [(R16_Y[i] + R16_Y[i + 1]) / 2 for i in range(0, 4, 2)]
     SF_Y = (QF_Y[0] + QF_Y[1]) / 2
 
-    XL = {"r32": 0, "r16": 150, "qf": 300, "sf": 450}
-    XC = 600
-    XR = {"sf": 750, "qf": 900, "r16": 1050, "r32": 1200}
+    CW = 178  # column width (left-edge to left-edge)
+    XL = {"r32": 0, "r16": CW, "qf": CW * 2, "sf": CW * 3}
+    CGAP = 22  # extra gap between SF and center
+    XC = XL["sf"] + BW + CGAP
+    XR = {"sf": XC + BW + CGAP, "qf": XC + BW + CGAP + CW,
+          "r16": XC + BW + CGAP + CW * 2, "r32": XC + BW + CGAP + CW * 3}
 
-    final_cy = SF_Y - 50
-    third_cy = SF_Y + 50
+    final_cy = SF_Y - 55
+    third_cy = SF_Y + 55
 
     def _box(mn: int, x: float, cy: float) -> str:
         f = fmap.get(mn)
@@ -1062,7 +1065,7 @@ def render_bracket(model) -> None:
         if hs is not None and as_ is not None:
             hn, an = f"{hn} <b>{hs}</b>", f"{an} <b>{as_}</b>"
         return (
-            f'<div class="mb" style="left:{x}px;top:{cy - BH // 2}px;">'
+            f'<div class="mb" style="left:{x}px;top:{cy - BH / 2}px;">'
             f'<div class="mb-h">{bj["date"]} {bj["time"]}</div>'
             f'<div class="mb-b"><div class="mb-t">{hf} {hn}</div>'
             f'<div class="mb-t">{af} {an}</div></div></div>'
@@ -1089,6 +1092,16 @@ def render_bracket(model) -> None:
     boxes.append(_box(103, XC, final_cy))
     boxes.append(_box(104, XC, third_cy))
 
+    # --- 轮次标签 ---
+    rl_labels = [
+        (XL["r32"], "32强"), (XL["r16"], "16强"), (XL["qf"], "八强"), (XL["sf"], "半决赛"),
+        (XC, "决赛"),
+        (XR["sf"], "半决赛"), (XR["qf"], "八强"), (XR["r16"], "16强"), (XR["r32"], "32强"),
+    ]
+    rl_html = "\n".join(
+        f'<div class="rl" style="left:{x}px;">{label}</div>' for x, label in rl_labels
+    )
+
     # --- SVG 连线 ---
     def _conn(x1, y1, y2, x2, ym):
         mx = (x1 + x2) / 2
@@ -1096,53 +1109,66 @@ def render_bracket(model) -> None:
                 f' M {mx},{ym} L {x2},{ym}')
 
     paths = []
-    # 左: R32→R16→QF→SF
     for i in range(4):
         paths.append(_conn(XL["r32"] + BW, R32_Y[i * 2], R32_Y[i * 2 + 1], XL["r16"], R16_Y[i]))
     for i in range(2):
         paths.append(_conn(XL["r16"] + BW, R16_Y[i * 2], R16_Y[i * 2 + 1], XL["qf"], QF_Y[i]))
     paths.append(_conn(XL["qf"] + BW, QF_Y[0], QF_Y[1], XL["sf"], SF_Y))
-    # 右: R32→R16→QF→SF
     for i in range(4):
         paths.append(_conn(XR["r32"], R32_Y[i * 2], R32_Y[i * 2 + 1], XR["r16"] + BW, R16_Y[i]))
     for i in range(2):
         paths.append(_conn(XR["r16"], R16_Y[i * 2], R16_Y[i * 2 + 1], XR["qf"] + BW, QF_Y[i]))
     paths.append(_conn(XR["qf"], QF_Y[0], QF_Y[1], XR["sf"] + BW, SF_Y))
-    # SF→决赛
     ml = (XL["sf"] + BW + XC) / 2
     paths.append(f'M {XL["sf"] + BW},{SF_Y} L {ml},{SF_Y} L {ml},{final_cy} L {XC},{final_cy}')
     mr = (XR["sf"] + XC + BW) / 2
     paths.append(f'M {XR["sf"]},{SF_Y} L {mr},{SF_Y} L {mr},{final_cy} L {XC + BW},{final_cy}')
 
-    svg = "\n".join(f'<path d="{p}" stroke="rgba(255,255,255,0.3)" stroke-width="2" fill="none"/>' for p in paths)
+    svg = "\n".join(f'<path d="{p}" stroke="rgba(255,255,255,0.35)" stroke-width="2" fill="none"/>' for p in paths)
     boxes_html = "\n".join(boxes)
     total_w = XR["r32"] + BW + 20
-    total_h = R32_Y[-1] + BH + 20
+    total_h = R32_Y[-1] + BH / 2 + 20
 
     css = """<style>
-.bw{background:linear-gradient(135deg,#0c1e3f 0%,#142b5f 40%,#1e3a8a 70%,#2563eb 100%);border-radius:12px;padding:20px;overflow:hidden}
-.bt{text-align:center;font-size:22px;font-weight:800;color:#fbbf24;background:linear-gradient(90deg,#1a1a1a,#2d2d2d,#1a1a1a);padding:8px 0;border-radius:8px;margin-bottom:16px;border:1px solid #fbbf24;letter-spacing:4px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:transparent}
+.bw{background:linear-gradient(135deg,#0a1628 0%,#0f2548 30%,#1a3a6e 60%,#2563eb 100%);border-radius:14px;padding:18px;overflow:hidden}
+.bt{text-align:center;font-size:22px;font-weight:800;color:#fbbf24;background:linear-gradient(90deg,#1a1a1a,#333 50%,#1a1a1a);padding:10px 0;border-radius:8px;margin-bottom:14px;border:1px solid #fbbf24;letter-spacing:6px}
 .ba{position:relative;margin:0 auto}
 .ba svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
-.mb{position:absolute;width:140px;height:56px;border-radius:4px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.3);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
-.mb-h{background:#dc2626;color:#fff;font-size:11px;font-weight:600;text-align:center;padding:2px 0;line-height:16px}
-.mb-b{background:#fff}
-.mb-t{color:#1a1a1a;font-size:12px;padding:3px 6px;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cl{position:absolute;text-align:center;width:140px;font-size:13px;font-weight:700;color:#fbbf24}
-</style>"""
+.rl{position:absolute;top:2px;text-align:center;width:160px;font-size:13px;font-weight:700;color:#93c5fd;text-shadow:0 1px 4px rgba(0,0,0,0.6)}
+.mb{position:absolute;width:160px;height:64px;border-radius:5px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.35);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;transition:box-shadow .15s}
+.mb:hover{box-shadow:0 4px 14px rgba(251,191,36,0.4)}
+.mb-h{background:#dc2626;color:#fff;font-size:10px;font-weight:600;text-align:center;padding:2px 0;line-height:14px}
+.mb-b{background:#fff;padding:1px 0}
+.mb-t{color:#1a1a1a;font-size:11px;padding:2px 7px;line-height:15px;white-space:normal;word-break:break-word;overflow:hidden}
+.cl{position:absolute;text-align:center;width:160px;font-size:13px;font-weight:700;color:#fbbf24}
+</style>
+<script>
+function fitBracket(){
+  var a=document.querySelector('.ba'),w=document.querySelector('.bw');
+  if(!a||!w)return;
+  var aw=w.clientWidth-36,ow=a.offsetWidth,oh=a.offsetHeight;
+  if(ow>aw){var s=aw/ow;a.style.transform='scale('+s+')';a.style.transformOrigin='top left';a.style.marginBottom='-'+Math.round(oh-oh*s)+'px';}
+  else{a.style.transform='none';a.style.marginBottom='0';}
+}
+window.addEventListener('load',fitBracket);
+window.addEventListener('resize',fitBracket);
+</script>"""
 
     html = f"""{css}
 <div class="bw">
   <div class="bt">晋 级 之 路</div>
   <div class="ba" style="width:{total_w}px;height:{total_h}px;">
     <svg viewBox="0 0 {total_w} {total_h}">{svg}</svg>
+    {rl_html}
     {boxes_html}
-    <div class="cl" style="left:{XC}px;top:{final_cy - BH // 2 - 22}px;">决赛</div>
-    <div class="cl" style="left:{XC}px;top:{third_cy - BH // 2 - 22}px;">三四名决赛</div>
+    <div class="cl" style="left:{XC}px;top:{final_cy - BH / 2 - 22}px;">决赛</div>
+    <div class="cl" style="left:{XC}px;top:{third_cy - BH / 2 - 22}px;">三四名决赛</div>
   </div>
 </div>"""
 
-    components.html(html, height=int(total_h) + 120, scrolling=True)
+    components.html(html, height=int(total_h) + 140, scrolling=True)
     st.caption("对阵 slot：1A=A组头名、2B=B组次名、3XXXX=列出小组中最佳第三。"
                "投影球队来自当前小组模拟的最可能占位，随赛果变化。R16 之后由 32 强结果决定。")
 
