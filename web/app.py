@@ -1040,12 +1040,19 @@ th {{ color:var(--dim); font-size:12px; }}
   .gsa-grid,.gsa-r32-grid {{ grid-template-columns:1fr; }}
   .strat-scores {{ grid-template-columns:1fr; }}
 }}
+.back-to-top {{ position:fixed; right:28px; bottom:36px; width:44px; height:44px; border-radius:50%;
+  background:rgba(59,130,246,.85); color:#fff; border:none; cursor:pointer; font-size:20px; line-height:44px;
+  text-align:center; z-index:9999; opacity:0; pointer-events:none; transition:opacity .3s, transform .3s;
+  box-shadow:0 4px 16px rgba(0,0,0,.35); backdrop-filter:blur(6px); }}
+.back-to-top.show {{ opacity:1; pointer-events:auto; }}
+.back-to-top:hover {{ background:rgba(59,130,246,1); transform:translateY(-3px); }}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div id="app"></div>
 </div>
+<button class="back-to-top" id="backTop" title="回到顶部">↑</button>
 <script>
 const DATA = {data_json};
 const $ = s => document.querySelector(s);
@@ -1230,6 +1237,14 @@ function drawDonut() {{
 }}
 $('#app').innerHTML = renderTeamComparison()+renderDimensions()+renderPrediction()+renderGroupStrategicAnalysis()+renderOdds()+renderSummary()+renderChampion();
 drawRadar(); drawDonut();
+window.addEventListener('scroll', function() {{
+  var btn = document.getElementById('backTop');
+  if (window.scrollY > 400) {{ btn.classList.add('show'); }}
+  else {{ btn.classList.remove('show'); }}
+}});
+document.getElementById('backTop').addEventListener('click', function() {{
+  window.scrollTo({{ top: 0, behavior: 'smooth' }});
+}});
 </script>
 </body>
 </html>
