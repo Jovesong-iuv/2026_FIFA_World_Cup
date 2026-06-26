@@ -745,6 +745,137 @@ def _build_group_strategic_analysis(model, home: str, away: str,
     }
 
 
+def _strategic_factors(gsa: dict, model, home: str, away: str) -> tuple:
+    """根据战略分析计算有界调整因子。返回 (home_mult, away_mult, notes)。"""
+    if not gsa or not gsa.get("available"):
+        return 1.0, 1.0, []
+
+    _STAR = {"Argentina": "梅西", "France": "姆巴佩", "Norway": "哈兰德",
+             "Brazil": "维尼修斯", "England": "凯恩", "Portugal": "C罗",
+             "Spain": "亚马尔", "Germany": "穆西亚拉", "Netherlands": "德佩",
+             "Italy": "基耶萨", "Belgium": "德布劳内", "Croatia": "莫德里奇"}
+
+    def _elo(team):
+        try:
+            return model.elo.ratings.get(team, 1500)
+        except Exception:
+            return 1500
+
+    home_mult = 1.0
+    away_mult = 1.0
+    notes = []
+
+    for side, ta in [("home", gsa.get("home")), ("away", gsa.get("away"))]:
+        if not ta:
+            continue
+
+        mult = 1.0
+        sq = ta.get("sim_qualify", 0.5)
+        sf = ta.get("sim_first", 0.5)
+        played = ta.get("played", 0)
+        cn = ta.get("team_cn", "")
+
+        # 出线已定 + 大概率头名 → 轮换
+        if sq > 0.9 and sf > 0.8 and played >= 2:
+            mult *= 0.90
+            notes.append(f"{cn}已确认出线且大概率头名，预期轮换主力，进球×0.90")
+
+        # 已出线但头名未定 → 战意提升
+        elif sq > 0.9 and 0.3 < sf <= 0.8 and played >= 2:
+            mult *= 1.06
+            notes.append(f"{cn}已出线但头名未定，末轮仍需争胜，进球×1.06")
+
+        # 出线形势危急 → 全力进攻
+        elif sq < 0.5 and played >= 2:
+            mult *= 1.08
+            notes.append(f"{cn}出线形势危急，全力争胜，进球×1.08")
+
+        # 基本出局 → 战意下降
+        elif sq < 0.1 and played >= 2:
+            mult *= 0.93
+            notes.append(f"{cn}基本出局，战意下降，进球×0.93")
+
+        # 金靴奖动机
+        if sq > 0.9 and sf > 0.7:
+            star = _STAR.get(ta.get("team", ""))
+            if star:
+                mult *= 1.04
+                notes.append(f"{cn}{star}争夺金靴，进球×1.04")
+
+        # R32 对手实力影响
+        r1 = ta.get("r32_first")
+        if r1 and r1.get("opponent_team"):
+            opp_elo = _elo(r1["opponent_team"])
+            if opp_elo > 1850 and sq > 0.6 and sf > 0.5:
+                mult *= 1.03
+                notes.append(f"{cn}32强对手{r1['opponent_team_cn']}实力强(Elo {opp_elo:.0f})，需保排名，进球×1.03")
+            elif opp_elo < 1600 and sq > 0.9 and sf > 0.8:
+                mult *= 0.96
+                notes.append(f"{cn}32强对手{r1['opponent_team_cn']}实力一般(Elo {opp_elo:.0f})，赛程有利可轮换，进球×0.96")
+
+        # 有界夹紧 ±15%
+        mult = max(0.85, min(1.15, mult))
+
+        if side == "home":
+            home_mult = mult
+        else:
+            away_mult = mult
+
+    return home_mult, away_mult, notes
+
+
+def _apply_strategic_adjustment(cl: dict, home_mult: float, away_mult: float,
+                                notes: list) -> None:
+    """将战略修正因子应用到 clemente 预测结果上（原地修改 cl）。"""
+    if abs(home_mult - 1.0) < 1e-6 and abs(away_mult - 1.0) < 1e-6:
+        return
+
+    import numpy as np
+    from math import exp, factorial
+
+    orig_lam, orig_mu = cl["exp_goals"]
+    new_lam = orig_lam * home_mult
+    new_mu = orig_mu * away_mult
+
+    cl["strategic"] = {
+        "applied": True,
+        "home_mult": round(home_mult, 3),
+        "away_mult": round(away_mult, 3),
+        "notes": notes,
+        "original_lambda": round(orig_lam, 3),
+        "original_mu": round(orig_mu, 3),
+        "adjusted_lambda": round(new_lam, 3),
+        "adjusted_mu": round(new_mu, 3),
+    }
+
+    def _poisson_pmf(k, lam):
+        if lam <= 0:
+            return 1.0 if k == 0 else 0.0
+        return exp(-lam) * (lam ** k) / factorial(k)
+
+    mat = np.array(cl["matrix"], dtype=float)
+    n = mat.shape[0]
+    new_mat = np.zeros_like(mat)
+
+    for i in range(n):
+        for j in range(n):
+            old_pi = _poisson_pmf(i, orig_lam)
+            old_pj = _poisson_pmf(j, orig_mu)
+            new_pi = _poisson_pmf(i, new_lam)
+            new_pj = _poisson_pmf(j, new_mu)
+            ratio_i = new_pi / old_pi if old_pi > 1e-15 else 1.0
+            ratio_j = new_pj / old_pj if old_pj > 1e-15 else 1.0
+            new_mat[i, j] = mat[i, j] * ratio_i * ratio_j
+
+    total = new_mat.sum()
+    if total > 0:
+        new_mat /= total
+
+    cl["matrix"] = new_mat
+    cl["exp_goals"] = (round(new_lam, 3), round(new_mu, 3))
+    cl["notes"] = list(cl.get("notes", [])) + [f"🎯 战略修正：{n}" for n in notes]
+
+
 def render_bridge_dashboard(payload: dict) -> None:
     """Embed the reference-style HTML dashboard with current project data."""
     import json
@@ -875,6 +1006,13 @@ th {{ color:var(--dim); font-size:12px; }}
 .gsa-note {{ display:grid; grid-template-columns:88px 1fr; gap:10px; padding:8px 0; border-bottom:1px solid rgba(255,255,255,.05); }}
 .gsa-note-cat {{ color:var(--gold); font-weight:800; font-size:12px; }}
 .gsa-note-text {{ color:var(--muted); font-size:13px; line-height:1.6; }}
+.strat-panel {{ margin:0 20px 16px; padding:14px; border-radius:14px; border:1px solid rgba(245,158,11,.25); background:rgba(245,158,11,.06); }}
+.strat-header {{ font-size:14px; font-weight:800; color:#ffd58a; margin-bottom:8px; }}
+.strat-factors {{ display:flex; gap:12px; margin:6px 0; }}
+.strat-factor {{ padding:4px 12px; border-radius:999px; font-size:12px; font-weight:700; background:rgba(59,130,246,.12); color:#93c5fd; }}
+.strat-factor.away {{ background:rgba(239,68,68,.12); color:#ffaaa9; }}
+.strat-notes {{ margin-top:8px; }}
+.strat-note {{ font-size:12px; color:var(--muted); padding:3px 0; line-height:1.5; }}
 @media(max-width:760px) {{
   .wrap {{ padding:12px; }} .team-card,.grid2,.prob-grid,.records,.summary {{ grid-template-columns:1fr; padding:16px; }}
   .vs {{ display:none; }} .score {{ font-size:44px; }} .info-row {{ grid-template-columns:92px 1fr; }}
@@ -951,10 +1089,16 @@ function matrixHtml() {{
   }}
   return html + '</div>';
 }}
+function renderStrategicAdjustment() {{
+  const s = DATA.prediction?.strategic;
+  if (!s || !s.applied) return '';
+  const notesHtml = (s.notes || []).map(n => `<div class="strat-note">· ${{esc(n)}}</div>`).join('');
+  return `<div class="strat-panel"><div class="strat-header">🎯 战略修正 · λ ${{s.original_lambda}} : ${{s.original_mu}} → 修正后 ${{s.adjusted_lambda}} : ${{s.adjusted_mu}}</div><div class="strat-factors"><span class="strat-factor">主队 ×${{s.home_mult}}</span><span class="strat-factor away">客队 ×${{s.away_mult}}</span></div><div class="strat-notes">${{notesHtml}}</div></div>`;
+}}
 function renderPrediction() {{
   const p = DATA.prediction, top = p.top_scorelines || [];
   const guides = top.map((s,i)=>`<div class="guide-item ${{i===0?'reco':''}}"><div>${{i===0?'⭐ 推荐':'参考'}}</div><div class="s">${{s.score}}</div><div class="p">${{pct(s.probability)}}</div></div>`).join('');
-  return `<div class="card"><div class="title"><div><h2>胜平负 / 比分矩阵 / 指导比分</h2><p>Dixon-Coles 组合模型 · λ ${{p.lambda_a.toFixed(2)}} : ${{p.lambda_b.toFixed(2)}}</p></div></div><div class="prob-grid"><div class="donut"><canvas id="donut" width="260" height="260"></canvas><div class="donut-center"><b>${{top[0]?.score || '—'}}</b><br><span>最可能比分</span></div></div><div>${{matrixHtml()}}</div></div><div class="guide"><div class="guide-list">${{guides}}</div></div>${{renderLambdaPanel()}}</div>`;
+  return `<div class="card"><div class="title"><div><h2>胜平负 / 比分矩阵 / 指导比分</h2><p>Dixon-Coles 组合模型 · λ ${{p.lambda_a.toFixed(2)}} : ${{p.lambda_b.toFixed(2)}}</p></div></div><div class="prob-grid"><div class="donut"><canvas id="donut" width="260" height="260"></canvas><div class="donut-center"><b>${{top[0]?.score || '—'}}</b><br><span>最可能比分</span></div></div><div>${{matrixHtml()}}</div></div><div class="guide"><div class="guide-list">${{guides}}</div></div>${{renderStrategicAdjustment()}}${{renderLambdaPanel()}}</div>`;
 }}
 function factorRows(profile) {{
   const labels = {{attack_volume:'机会量',chance_quality:'机会质量',transition_attack:'转换',pressing:'逼抢',low_block:'低位',set_piece_attack:'定位球',defensive_resistance:'防守韧性',tempo:'节奏'}};
@@ -2527,6 +2671,10 @@ cl = clemente.predict(model, home, away, neutral,
                       away_formation=(_sq_a or {}).get("formation"),
                       squad_value_home=(_val_h or None), squad_value_away=(_val_a or None),
                       finishing_home=_fin_h, finishing_away=_fin_a)
+# 战略分析回灌：根据出线形势/R32对位/金靴动机/对手实力修正预测
+_gsa_data = _build_group_strategic_analysis(model, home, away, selected_fixture, fixtures)
+_strat_h, _strat_a, _strat_notes = _strategic_factors(_gsa_data, model, home, away)
+_apply_strategic_adjustment(cl, _strat_h, _strat_a, _strat_notes)
 mat = cl["matrix"]
 lam, mu = cl["exp_goals"]
 context_notes = cl["notes"]
@@ -2776,9 +2924,11 @@ if action_button("🌐 联网补全分场分析数据", key=f"refresh_match_insi
         st.warning("已写入可获取的数据；部分来源失败：" + "；".join(_mi_res["errors"][:4]))
     st.cache_data.clear()
     st.cache_resource.clear()
-# 注入小组赛深度战略分析（出线形势 + R32对位 + 战略考量）
-_bridge_payload["group_strategic_analysis"] = _build_group_strategic_analysis(
-    model, home, away, selected_fixture, fixtures)
+# 注入小组赛深度战略分析（复用已计算的 _gsa_data）
+_bridge_payload["group_strategic_analysis"] = _gsa_data
+# 注入战略修正对比数据到 prediction 块
+if cl.get("strategic", {}).get("applied"):
+    _bridge_payload["prediction"]["strategic"] = cl["strategic"]
 with st.expander("打开参考项目风格大屏（HTML / Canvas 桥接版）", expanded=True):
     st.caption("数据来自当前 Python 模型与 FastAPI 契约；UI 参考给到项目的玻璃态暗色仪表盘。人口/最佳成绩等静态资料来自 data/team_profiles.json。")
     render_bridge_dashboard(_bridge_payload)
