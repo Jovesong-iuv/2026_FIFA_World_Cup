@@ -1060,9 +1060,9 @@ def render_parlay_builder() -> None:
     if not fixtures:
         st.warning("暂无可预测赛程，请先刷新赛程或初始化数据。")
         return
-    groups = sorted({f["group_name"] for f in fixtures})
+    groups = sorted({f.get("group_name") or "淘汰赛" for f in fixtures})
     g = st.selectbox("筛选分组", ["全部"] + groups, key="parlay_group")
-    flist = [f for f in fixtures if g == "全部" or f["group_name"] == g]
+    flist = [f for f in fixtures if g == "全部" or (f.get("group_name") or "淘汰赛") == g]
     selected_idx = st.multiselect(
         "选择串关场次",
         range(len(flist)),
@@ -1458,7 +1458,9 @@ def render_group_stage(model) -> None:
 
 
 def _group_short(group: str) -> str:
-    return group.replace("Group ", "") + "组" if group and group.startswith("Group ") else (group or "")
+    if group and group.startswith("Group "):
+        return group.replace("Group ", "") + "组"
+    return group or "淘汰赛"
 
 
 def _match_labels(probs: dict, upset_idx: int, home: str, neutral: bool) -> list[tuple]:
@@ -1559,13 +1561,13 @@ def render_home(model) -> None:
     s3.metric("模型更新", sig)
 
     f1, f2, f3 = st.columns([1, 1, 2])
-    fg = f1.selectbox("小组", ["全部"] + sorted({r["group_name"] for r in rows}))
+    fg = f1.selectbox("小组", ["全部"] + sorted({r.get("group_name") or "淘汰赛" for r in rows}))
     fr = f2.selectbox("轮次", ["全部", 1, 2, 3])
     q = f3.text_input("搜索球队（中 / 英文）").strip().lower()
     only_upset = st.checkbox("只看爆冷预警（指数 ≥ 61）")
 
     def keep(r):
-        if fg != "全部" and r["group_name"] != fg:
+        if fg != "全部" and (r.get("group_name") or "淘汰赛") != fg:
             return False
         if fr != "全部" and r.get("round_number") != fr:
             return False
@@ -2014,11 +2016,11 @@ venue_info = None
 if mode == "按赛程" and fixtures:
     from wc2026.analysis import schedule as _sch
     from datetime import datetime as _dt, timezone as _tz
-    groups = sorted({f["group_name"] for f in fixtures})
+    groups = sorted({f.get("group_name") or "淘汰赛" for f in fixtures})
     c1, c2 = st.columns([1, 2.4])
     g = c1.selectbox("分组", ["全部"] + groups)
     flist = _sch.sort_fixtures(
-        [f for f in fixtures if g == "全部" or f["group_name"] == g], _dt.now(_tz.utc))
+        [f for f in fixtures if g == "全部" or (f.get("group_name") or "淘汰赛") == g], _dt.now(_tz.utc))
 
     def _fx_label(i):
         f = flist[i]
@@ -2030,7 +2032,7 @@ if mode == "按赛程" and fixtures:
     sel = flist[idx]
     selected_fixture = sel
     home, away = sel["home_team"], sel["away_team"]
-    venue_info = f"🗓 {_sch.beijing(sel['date_utc'])['full']}（北京） · {sel['group_name']} · 📍{sel['location']}"
+    venue_info = f"🗓 {_sch.beijing(sel['date_utc'])['full']}（北京） · {sel.get('group_name') or '淘汰赛'} · 📍{sel['location']}"
     default_neutral = home not in HOSTS
 else:
     selected_fixture = None
