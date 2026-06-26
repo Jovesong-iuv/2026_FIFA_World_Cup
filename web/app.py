@@ -736,7 +736,7 @@ def require_login() -> dict:
         """
         <div class="wc-login">
             <h1>2026 世界杯预测</h1>
-            <p>登录后进入模型预测、价值分析与串关组合工作台。</p>
+            <p>登录后进入模型预测、价值分析与晋级之路工作台。</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -863,80 +863,6 @@ def render_access_log() -> None:
         st.rerun()
 
 
-def render_bet_log() -> None:
-    """所有者：投注台账（记注 + 结算 + ROI / 盈亏曲线 / 回撤）。"""
-    from wc2026.data import bets as bet_db
-    section_title("投注台账（所有者）")
-    st.caption("记录你实际下的注，结算后自动算 ROI、命中率、盈亏曲线、最大回撤。仅本地数据库，仅供复盘。")
-    with st.form("add_bet_form", clear_on_submit=True):
-        a1, a2, a3 = st.columns(3)
-        bm = a1.text_input("场次", placeholder="墨西哥 vs 南非")
-        bmk = a2.text_input("市场", placeholder="胜平负 / 大小球 / 让球…")
-        bsel = a3.text_input("选择", placeholder="主胜 / 大 2.5 / 主-0.5…")
-        a4, a5, a6 = st.columns(3)
-        bodds = a4.number_input("赔率", min_value=1.01, value=2.00, step=0.01)
-        bstake = a5.number_input("本金", min_value=0.0, value=100.0, step=10.0)
-        bnote = a6.text_input("备注")
-        if st.form_submit_button("➕ 记一注") and bm.strip():
-            bet_db.add_bet(bm.strip(), bmk.strip(), bsel.strip(), bodds, bstake, bnote.strip())
-            st.success("已记录")
-            st.rerun()
-
-    rows = bet_db.list_bets()
-    if not rows:
-        st.caption("还没有投注记录。")
-        return
-    s = bet_db.summary(rows)
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("总盈亏", f"{s['profit']:+.2f}")
-    m2.metric("ROI（已结算）", f"{s['roi']:+.1%}")
-    m3.metric("命中率", f"{s['win_rate']:.0%}", f"{s['wins']} 胜", delta_color="off")
-    m4.metric("最大回撤", f"{s['max_drawdown']:.2f}")
-    st.caption(f"已结算 {s['settled']} 注 · 待结 {s['pending']} 注（待结本金 {s['pending_stake']:.0f}）· "
-               f"已投本金 {s['staked']:.0f} · 回收 {s['returned']:.0f}")
-    if s.get("clv_count"):
-        st.caption(f"📈 收盘线价值(CLV，{s['clv_count']} 注有收盘赔率)：击败收盘 {s['beat_close_rate']:.0%} · "
-                   f"平均 CLV {s['avg_clv']:+.1%}。长期看 CLV>0 比短期盈亏更能说明你下注有价值。")
-    if s["curve"]:
-        cfig = go.Figure(go.Scatter(y=s["curve"], mode="lines+markers", name="累计盈亏"))
-        cfig.update_layout(height=260, margin=dict(l=10, r=10, t=10, b=10), yaxis_title="累计盈亏",
-                           template="plotly_dark" if current_theme() == "dark" else "plotly_white",
-                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(cfig, width="stretch")
-
-    df = pd.DataFrame([{
-        "id": r["id"], "时间": (r["created_at"] or "")[5:16], "场次": r["match"],
-        "市场": r["market"], "选择": r["selection"], "赔率": r["odds"], "本金": r["stake"],
-        "状态": r["status"], "盈亏": round(bet_db.pnl_of(r), 2), "收盘赔率": r.get("close_odds"),
-        "备注": r["note"] or "",
-    } for r in rows])
-    edited = st.data_editor(
-        df, hide_index=True, width="stretch", key="bets_editor",
-        column_config={
-            "状态": st.column_config.SelectboxColumn("状态", options=list(bet_db.STATUSES)),
-            "收盘赔率": st.column_config.NumberColumn("收盘赔率", min_value=1.01, step=0.01, format="%.2f"),
-            **{c: st.column_config.Column(disabled=True)
-               for c in ["id", "时间", "场次", "市场", "选择", "赔率", "本金", "盈亏", "备注"]},
-        })
-    cc1, cc2 = st.columns([1, 2])
-    if cc1.button("💾 保存结算 / 收盘赔率"):
-        before = {r["id"]: (r["status"], r.get("close_odds")) for r in rows}
-        changed = 0
-        for _, row in edited.iterrows():
-            st0, co0 = before.get(row["id"], (None, None))
-            if st0 != row["状态"]:
-                bet_db.set_status(int(row["id"]), row["状态"]); changed += 1
-            co_new = row["收盘赔率"] if row["收盘赔率"] and float(row["收盘赔率"]) > 1.0 else None
-            if (co0 or None) != co_new:
-                bet_db.set_close(int(row["id"]), co_new); changed += 1
-        st.success(f"已更新 {changed} 项。")
-        st.rerun()
-    del_id = cc2.selectbox("删除某注", ["（不删）"] + [r["id"] for r in rows], key="del_bet")
-    if del_id != "（不删）" and cc2.button("🗑 删除所选"):
-        bet_db.delete_bet(int(del_id))
-        st.rerun()
-
-
 def render_admin_user_panel() -> None:
     if not LOGIN_ENABLED:
         return  # 登录已关闭：不显示账号/退出/建用户面板（代码保留）
@@ -1015,6 +941,18 @@ def load_fixtures():
     return fixtures
 
 
+@st.cache_data
+def load_knockout_fixtures():
+    """加载全部淘汰赛赛程（round_number≥4），含 home_src/away_src slot 码。"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT match_number, round_number, date_utc, home_src, away_src, "
+            "home_team, away_team, location, home_score, away_score "
+            "FROM fixtures WHERE round_number >= 4 ORDER BY match_number"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def llm_configured():
     return settings.llm_enabled and bool(settings.llm_api_key)
 
@@ -1051,182 +989,162 @@ def value_candidates_for_match(match: dict, neutral: bool = True) -> list[dict]:
     return derive.market_candidates(mat, lam, mu, zh(home_team), zh(away_team))
 
 
-def render_parlay_builder() -> None:
-    render_hero(
-        "串关组合",
-        "选择多场比赛；每场从单场「价值 & 凯利」同口径参数里单选一个，再计算串关总概率、总赔率和期望值。",
-        "PARLAY BUILDER",
-    )
-    if not fixtures:
-        st.warning("暂无可预测赛程，请先刷新赛程或初始化数据。")
-        return
-    groups = sorted({f.get("group_name") or "淘汰赛" for f in fixtures})
-    g = st.selectbox("筛选分组", ["全部"] + groups, key="parlay_group")
-    flist = [f for f in fixtures if g == "全部" or (f.get("group_name") or "淘汰赛") == g]
-    selected_idx = st.multiselect(
-        "选择串关场次",
-        range(len(flist)),
-        default=[],
-        format_func=lambda i: f"{zh(flist[i]['home_team'])} vs {zh(flist[i]['away_team'])} ({flist[i]['date_utc'][:10]})",
-    )
-    stake = st.number_input("本组串关投注金额", min_value=0.0, value=100.0, step=10.0)
-    parlay_markets = st.multiselect(
-        "显示参数类型",
-        ["胜平负", "半全场胜平负", "让球", "大小球", "进球个数", "比分"],
-        default=["胜平负", "半全场胜平负", "让球", "大小球", "进球个数", "比分"],
-    )
-    legs = []
-    rec_legs = []
-    if selected_idx:
-        section_title("🎯 概率最高串关推荐")
-        rec_detail = []
-        for idx in selected_idx:
-            match = flist[idx]
-            cands = [c for c in value_candidates_for_match(match, neutral=match["home_team"] not in HOSTS)
-                     if c["market"] in parlay_markets]
-            if not cands:
-                continue
-            cands.sort(key=lambda c: c["model_prob"], reverse=True)
-            mm = f"{zh(match['home_team'])} vs {zh(match['away_team'])}"
-            best = cands[0]
-            rec_legs.append({"match": mm, "market": best["market"], "label": best["label"],
-                             "model_prob": best["model_prob"], "odds": best["odds"]})
-            for rk, c in enumerate(cands[:3], 1):
-                rec_detail.append({"场次": mm, "排序": rk, "市场": c["market"], "选项": c["label"],
-                                   "模型概率": f"{c['model_prob']:.1%}", "公平赔率": f"{c['odds']:.2f}"})
-        if rec_legs:
-            rec_sum = value.parlay_summary(rec_legs, stake)
-            r1, r2, r3 = st.columns(3)
-            r1.metric("稳胆串关总概率", f"{rec_sum['combined_prob']:.2%}")
-            r2.metric("总赔率", f"{rec_sum['combined_odds']:.2f}")
-            r3.metric("关数", len(rec_legs))
-            st.caption("「稳胆」推荐：每场取模型概率最高的选项串一起（命中率最高、赔率最低）。"
-                       "下表为各场前 3 选项(按模型概率排序)，想换更高赔率/价值在下方「逐场参数选择」里自行勾选。")
-            st.dataframe(pd.DataFrame(rec_detail), hide_index=True, width="stretch")
-        section_title("逐场参数选择")
-    for pos, idx in enumerate(selected_idx, start=1):
-        match = flist[idx]
-        candidates = [
-            c for c in value_candidates_for_match(match, neutral=match["home_team"] not in HOSTS)
-            if c["market"] in parlay_markets
-        ]
-        if not candidates:
-            st.warning(f"{zh(match['home_team'])} vs {zh(match['away_team'])} 暂无可选参数。")
-            continue
-        st.markdown(f"**{pos}. {zh(match['home_team'])} vs {zh(match['away_team'])}**")
-        top_by_market = {}
-        market_order = {name: i for i, name in enumerate(["胜平负", "半全场胜平负", "让球", "大小球", "进球个数", "比分"])}
-        sorted_candidates = sorted(
-            candidates,
-            key=lambda r: (market_order.get(r["market"], 99), -r["model_prob"], r["label"]),
-        )
-        for row in sorted_candidates:
-            cur = top_by_market.get(row["market"])
-            if cur is None or row["model_prob"] > cur["model_prob"]:
-                top_by_market[row["market"]] = row
-        top_keys = {row["key"] for row in top_by_market.values()}
-        table_rows = []
-        for row in sorted_candidates:
-            table_rows.append({
-                "选择": False,
-                "key": row["key"],
-                "市场": row["market"],
-                "选项": row["label"],
-                "概率": row["model_prob"],
-                "概率显示": f"{row['model_prob']:.1%}",
-                "默认赔率": round(row["odds"], 2),
-                "实际赔率": round(row["odds"], 2),
-                "标记": "本类最高概率" if row["key"] in top_keys else "",
-            })
-        edited = st.data_editor(
-            pd.DataFrame(table_rows),
-            hide_index=True,
-            width="stretch",
-            disabled=["key", "市场", "选项", "概率显示", "默认赔率", "标记"],
-            column_order=["选择", "市场", "选项", "概率显示", "默认赔率", "实际赔率", "标记"],
-            column_config={
-                "选择": st.column_config.CheckboxColumn("选择"),
-                "默认赔率": st.column_config.NumberColumn("默认赔率", format="%.2f"),
-                "实际赔率": st.column_config.NumberColumn("实际赔率", min_value=1.01, step=0.01, format="%.2f"),
-            },
-            key=f"parlay_table:{match['match_number']}:{pos}",
-        )
-        selected_rows = edited[edited["选择"]]
-        if len(selected_rows) > 1:
-            st.warning("每场只能选一个参数；当前按表格中第一个勾选项计算。")
-        if selected_rows.empty:
-            st.caption("本场未选择参数，暂不纳入串关。")
-            continue
-        selected = selected_rows.iloc[0]
-        chosen = next(c for c in candidates if c["key"] == selected["key"])
-        odds_input = float(selected["实际赔率"])
-        legs.append({
-            "match": f"{zh(match['home_team'])} vs {zh(match['away_team'])}",
-            "market": chosen["market"],
-            "label": chosen["label"],
-            "model_prob": chosen["model_prob"],
-            "odds": odds_input,
-        })
-    eff_legs = legs if legs else rec_legs
-    summary = value.parlay_summary(eff_legs, stake)
-    if not summary["legs"]:
-        st.info("请选择至少一场比赛（勾选具体参数则按你的选择，否则默认分析上方「概率最高推荐」组合）。")
-        return
-    st.divider()
-    if not legs and rec_legs:
-        st.caption("ℹ️ 你未手动勾选，以下按「概率最高推荐」组合分析；可在上方逐场勾选自定义。")
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("串关总概率", f"{summary['combined_prob']:.2%}")
-    m2.metric("串关总赔率", f"{summary['combined_odds']:.2f}")
-    m3.metric("潜在返还", f"{summary['potential_return']:.2f}")
-    m4.metric("模型期望收益", f"{summary['expected_profit']:.2f}", f"{summary['edge']:+.1%}")
-    st.dataframe(pd.DataFrame([{
-        "场次": r["match"],
-        "市场": r.get("market", ""),
-        "选择": r["label"],
-        "模型概率": f"{r['model_prob']:.1%}",
-        "赔率": f"{r['odds']:.2f}",
-        "单关价值": f"{r['edge']:+.1%}",
-    } for r in summary["legs"]]), hide_index=True, width="stretch")
-    n_legs = len(summary["legs"])
-    _matches = [r["match"] for r in summary["legs"]]
-    if len(_matches) != len(set(_matches)):
-        st.error("⚠️ 同一场比赛被串了多个选项：同场结果高度相关，「总概率＝各关相乘」会严重高估真实命中率，"
-                 "建议每场只保留一项。")
-    if n_legs >= 4:
-        st.warning(f"🚩 高风险串关：共 {n_legs} 关，每关都要命中。命中率随关数指数下降，建议控制在 2–3 关。")
-    st.caption("串关假设各场结果近似独立；实际模型有误差、结果也可能相关，"
-               "「总概率（相乘）」是乐观上限，真实命中率通常更低、关数越多衰减越快。仅供参考，不代表盈利保证。")
+def render_bracket(model) -> None:
+    """晋级之路：淘汰赛对阵树（R32→R16→QF→SF→决赛+三四名）。"""
+    render_hero("晋级之路", "2026 世界杯淘汰赛完整对阵树", "KNOCKOUT BRACKET")
 
-    st.divider()
-    section_title("🤖 串关 AI 问答")
-    if not llm_configured():
-        st.caption("需接入 LLM（.env 配置 LLM_API_KEY）后可用。")
-    elif not is_owner():
-        st.caption("🔒 AI 问答仅所有者可用（消耗 LLM token）；访客只读。")
-    else:
-        from wc2026.llm import match_chat
-        pctx = match_chat.build_parlay_context(summary["legs"], summary)
-        pkey = "parlaychat"
-        phist = st.session_state.setdefault(pkey, [])
-        for mmsg in phist:
-            st.markdown(f"**{'🧑 你' if mmsg['role'] == 'user' else '🤖 AI'}：** {mmsg['content']}")
-        pq = st.text_area("问串关相关问题（如：这串风险在哪？该减到几关？哪关最可能爆？换哪个选项更稳？）",
-                          key="parlay_q", height=80)
-        pcc1, pcc2 = st.columns([1, 1])
-        if pcc1.button("发送", key="parlay_send") and pq.strip():
-            phist.append({"role": "user", "content": pq.strip()})
-            with st.spinner("AI 分析串关中…"):
-                pans = match_chat.ask(pq.strip(), pctx, phist)
-            phist.append({"role": "assistant", "content": pans["text"]})
-            st.rerun()
-        if pcc2.button("清空对话", key="parlay_clear"):
-            st.session_state[pkey] = []
-            st.rerun()
-        if st.checkbox("查看 AI 看到的串关上下文", key="parlay_ctx"):
-            st.code(pctx)
-        st.caption("AI 依据模型概率与你当前所串的各关作答；如需实时赔率价值，请先在「💰 价值扫描」拉取赔率(所有者)再来问。"
-                   "AI 不会自动联网/拉取，避免消耗配额与 token。")
+    ko = load_knockout_fixtures()
+    if not ko:
+        st.warning("暂无淘汰赛赛程数据，请先刷新赛程。")
+        return
+
+    fmap = {f["match_number"]: f for f in ko}
+
+    # --- 小组模拟结果（用于 slot 投影）---
+    res: dict = {}
+    try:
+        from wc2026.analysis import groups as groups_mod
+        gd = groups_mod.load_group_data(model)
+        if gd:
+            sig = groups_mod.played_signature(gd)
+            key = f"bk_groupsim:{hash(sig)}"
+            if key not in st.session_state:
+                st.session_state[key] = groups_mod.simulate_groups(model, gd, n_sims=2000)
+            res = st.session_state[key]
+    except Exception:
+        pass
+
+    def _slot_proj(slot: str) -> str:
+        g = slot[1] if len(slot) == 2 and slot[0] in "12" else None
+        if slot.startswith("3"):
+            return "/".join(list(slot[1:])) + "组第三"
+        rws = res.get(f"Group {g}", [])
+        if not rws:
+            return slot
+        if slot.startswith("1"):
+            return zh(max(rws, key=lambda r: r["first"])["team"])
+        return zh(max(rws, key=lambda r: r["top2"] - r["first"])["team"])
+
+    from wc2026.data.flags import flag_emoji
+    from wc2026.analysis import schedule as sch
+
+    def _team_label(f: dict, side: str) -> tuple[str, str]:
+        src = (f.get(f"{side}_src") or "").strip()
+        team = (f.get(f"{side}_team") or "").strip()
+        if team in model.teams:
+            return flag_emoji(team), zh(team)
+        if src and src[0] in "123" and len(src) >= 2:
+            return "", _slot_proj(src)
+        return "", "待定"
+
+    # --- 坐标 ---
+    BW, BH = 140, 56
+    R32_Y = [25 + i * 90 for i in range(8)]
+    R16_Y = [(R32_Y[i] + R32_Y[i + 1]) / 2 for i in range(0, 8, 2)]
+    QF_Y = [(R16_Y[i] + R16_Y[i + 1]) / 2 for i in range(0, 4, 2)]
+    SF_Y = (QF_Y[0] + QF_Y[1]) / 2
+
+    XL = {"r32": 0, "r16": 150, "qf": 300, "sf": 450}
+    XC = 600
+    XR = {"sf": 750, "qf": 900, "r16": 1050, "r32": 1200}
+
+    final_cy = SF_Y - 50
+    third_cy = SF_Y + 50
+
+    def _box(mn: int, x: float, cy: float) -> str:
+        f = fmap.get(mn)
+        if not f:
+            return ""
+        bj = sch.beijing(f.get("date_utc"))
+        hf, hn = _team_label(f, "home")
+        af, an = _team_label(f, "away")
+        hs, as_ = f.get("home_score"), f.get("away_score")
+        if hs is not None and as_ is not None:
+            hn, an = f"{hn} <b>{hs}</b>", f"{an} <b>{as_}</b>"
+        return (
+            f'<div class="mb" style="left:{x}px;top:{cy - BH // 2}px;">'
+            f'<div class="mb-h">{bj["date"]} {bj["time"]}</div>'
+            f'<div class="mb-b"><div class="mb-t">{hf} {hn}</div>'
+            f'<div class="mb-t">{af} {an}</div></div></div>'
+        )
+
+    boxes = []
+    # 左半区
+    for i, mn in enumerate(range(73, 81)):
+        boxes.append(_box(mn, XL["r32"], R32_Y[i]))
+    for i, mn in enumerate(range(89, 93)):
+        boxes.append(_box(mn, XL["r16"], R16_Y[i]))
+    for i, mn in enumerate(range(97, 99)):
+        boxes.append(_box(mn, XL["qf"], QF_Y[i]))
+    boxes.append(_box(101, XL["sf"], SF_Y))
+    # 右半区
+    for i, mn in enumerate(range(81, 89)):
+        boxes.append(_box(mn, XR["r32"], R32_Y[i]))
+    for i, mn in enumerate(range(93, 97)):
+        boxes.append(_box(mn, XR["r16"], R16_Y[i]))
+    for i, mn in enumerate(range(99, 101)):
+        boxes.append(_box(mn, XR["qf"], QF_Y[i]))
+    boxes.append(_box(102, XR["sf"], SF_Y))
+    # 决赛 + 三四名
+    boxes.append(_box(103, XC, final_cy))
+    boxes.append(_box(104, XC, third_cy))
+
+    # --- SVG 连线 ---
+    def _conn(x1, y1, y2, x2, ym):
+        mx = (x1 + x2) / 2
+        return (f'M {x1},{y1} L {mx},{y1} L {mx},{y2} L {x1},{y2}'
+                f' M {mx},{ym} L {x2},{ym}')
+
+    paths = []
+    # 左: R32→R16→QF→SF
+    for i in range(4):
+        paths.append(_conn(XL["r32"] + BW, R32_Y[i * 2], R32_Y[i * 2 + 1], XL["r16"], R16_Y[i]))
+    for i in range(2):
+        paths.append(_conn(XL["r16"] + BW, R16_Y[i * 2], R16_Y[i * 2 + 1], XL["qf"], QF_Y[i]))
+    paths.append(_conn(XL["qf"] + BW, QF_Y[0], QF_Y[1], XL["sf"], SF_Y))
+    # 右: R32→R16→QF→SF
+    for i in range(4):
+        paths.append(_conn(XR["r32"], R32_Y[i * 2], R32_Y[i * 2 + 1], XR["r16"] + BW, R16_Y[i]))
+    for i in range(2):
+        paths.append(_conn(XR["r16"], R16_Y[i * 2], R16_Y[i * 2 + 1], XR["qf"] + BW, QF_Y[i]))
+    paths.append(_conn(XR["qf"], QF_Y[0], QF_Y[1], XR["sf"] + BW, SF_Y))
+    # SF→决赛
+    ml = (XL["sf"] + BW + XC) / 2
+    paths.append(f'M {XL["sf"] + BW},{SF_Y} L {ml},{SF_Y} L {ml},{final_cy} L {XC},{final_cy}')
+    mr = (XR["sf"] + XC + BW) / 2
+    paths.append(f'M {XR["sf"]},{SF_Y} L {mr},{SF_Y} L {mr},{final_cy} L {XC + BW},{final_cy}')
+
+    svg = "\n".join(f'<path d="{p}" stroke="rgba(255,255,255,0.3)" stroke-width="2" fill="none"/>' for p in paths)
+    boxes_html = "\n".join(boxes)
+    total_w = XR["r32"] + BW + 20
+    total_h = R32_Y[-1] + BH + 20
+
+    css = """<style>
+.bw{background:linear-gradient(135deg,#0c1e3f 0%,#142b5f 40%,#1e3a8a 70%,#2563eb 100%);border-radius:12px;padding:20px;overflow:hidden}
+.bt{text-align:center;font-size:22px;font-weight:800;color:#fbbf24;background:linear-gradient(90deg,#1a1a1a,#2d2d2d,#1a1a1a);padding:8px 0;border-radius:8px;margin-bottom:16px;border:1px solid #fbbf24;letter-spacing:4px}
+.ba{position:relative;margin:0 auto}
+.ba svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+.mb{position:absolute;width:140px;height:56px;border-radius:4px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.3);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.mb-h{background:#dc2626;color:#fff;font-size:11px;font-weight:600;text-align:center;padding:2px 0;line-height:16px}
+.mb-b{background:#fff}
+.mb-t{color:#1a1a1a;font-size:12px;padding:3px 6px;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cl{position:absolute;text-align:center;width:140px;font-size:13px;font-weight:700;color:#fbbf24}
+</style>"""
+
+    html = f"""{css}
+<div class="bw">
+  <div class="bt">晋 级 之 路</div>
+  <div class="ba" style="width:{total_w}px;height:{total_h}px;">
+    <svg viewBox="0 0 {total_w} {total_h}">{svg}</svg>
+    {boxes_html}
+    <div class="cl" style="left:{XC}px;top:{final_cy - BH // 2 - 22}px;">决赛</div>
+    <div class="cl" style="left:{XC}px;top:{third_cy - BH // 2 - 22}px;">三四名决赛</div>
+  </div>
+</div>"""
+
+    components.html(html, height=int(total_h) + 120, scrolling=True)
+    st.caption("对阵 slot：1A=A组头名、2B=B组次名、3XXXX=列出小组中最佳第三。"
+               "投影球队来自当前小组模拟的最可能占位，随赛果变化。R16 之后由 32 强结果决定。")
 
 
 def load_news(home, away):
@@ -1963,35 +1881,28 @@ if not st.session_state.get("_visit_logged"):
 
 render_hero(
     "2026 世界杯预测工作台",
-    "比分概率、盘口价值、串关组合与证据分析集中在一个可操作界面中。模型结论仅供参考，请理性参与并遵守当地法规。",
+    "比分概率、盘口价值、晋级之路与证据分析集中在一个可操作界面中。模型结论仅供参考，请理性参与并遵守当地法规。",
 )
 
-page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "大胆预测", "赛后复盘", "AI 分析师", "串关组合"]
+page_options = ["首页", "小组赛赛程", "单场分析", "小组出线", "大胆预测", "赛后复盘", "AI 分析师", "晋级之路"]
 if is_owner():
     page_options.append("访问记录")
-    page_options.append("投注台账")
 if user["role"] == "admin":
     page_options.append("用户管理")
 page = render_top_nav(page_options)
 render_admin_user_panel()
 render_access_banner()
-if page == "串关组合":
-    st.caption("LLM 理由/分析：" + ("✅ 已配置，可手动触发" if llm_configured() else "⚠️ 规则模板(未接入)"))
-
 if page == "首页":
     render_home(model)
     st.stop()
 if page == "访问记录":
     render_access_log()
     st.stop()
-if page == "投注台账":
-    render_bet_log()
-    st.stop()
 if page == "小组赛赛程":
     render_schedule(model)
     st.stop()
-if page == "串关组合":
-    render_parlay_builder()
+if page == "晋级之路":
+    render_bracket(model)
     st.stop()
 if page == "小组出线":
     render_group_stage(model)
