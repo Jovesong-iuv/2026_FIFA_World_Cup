@@ -853,7 +853,17 @@ def _apply_strategic_adjustment(cl: dict, home_mult: float, away_mult: float,
             return 1.0 if k == 0 else 0.0
         return exp(-lam) * (lam ** k) / factorial(k)
 
+    def _top_scores(mat, n=3):
+        scores = []
+        for i in range(mat.shape[0]):
+            for j in range(mat.shape[1]):
+                scores.append({"score": f"{i}-{j}", "probability": round(float(mat[i, j]), 4)})
+        scores.sort(key=lambda x: x["probability"], reverse=True)
+        return scores[:n]
+
     mat = np.array(cl["matrix"], dtype=float)
+    # 保存原始 top scorelines
+    cl["strategic"]["original_top_scores"] = _top_scores(mat)
     n = mat.shape[0]
     new_mat = np.zeros_like(mat)
 
@@ -870,6 +880,9 @@ def _apply_strategic_adjustment(cl: dict, home_mult: float, away_mult: float,
     total = new_mat.sum()
     if total > 0:
         new_mat /= total
+
+    # 修正后 top scorelines
+    cl["strategic"]["adjusted_top_scores"] = _top_scores(new_mat)
 
     cl["matrix"] = new_mat
     cl["exp_goals"] = (round(new_lam, 3), round(new_mu, 3))
@@ -1013,11 +1026,19 @@ th {{ color:var(--dim); font-size:12px; }}
 .strat-factor.away {{ background:rgba(239,68,68,.12); color:#ffaaa9; }}
 .strat-notes {{ margin-top:8px; }}
 .strat-note {{ font-size:12px; color:var(--muted); padding:3px 0; line-height:1.5; }}
+.strat-scores {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:8px 0; }}
+.strat-score-col {{ padding:10px; border-radius:10px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); }}
+.strat-score-title {{ font-size:11px; font-weight:800; color:var(--dim); margin-bottom:6px; }}
+.strat-score-item {{ display:flex; justify-content:space-between; align-items:center; padding:3px 0; font-size:13px; color:var(--muted); }}
+.strat-score-item .ss {{ font-weight:800; color:var(--text); }}
+.strat-score-item.reco .ss {{ color:var(--gold); }}
+.strat-score-item .sp {{ font-size:11px; color:var(--dim); }}
 @media(max-width:760px) {{
   .wrap {{ padding:12px; }} .team-card,.grid2,.prob-grid,.records,.summary {{ grid-template-columns:1fr; padding:16px; }}
   .vs {{ display:none; }} .score {{ font-size:44px; }} .info-row {{ grid-template-columns:92px 1fr; }}
   .guide-list,.lambda-panel,.margin-grid {{ grid-template-columns:1fr; }}
   .gsa-grid,.gsa-r32-grid {{ grid-template-columns:1fr; }}
+  .strat-scores {{ grid-template-columns:1fr; }}
 }}
 </style>
 </head>
@@ -1093,7 +1114,10 @@ function renderStrategicAdjustment() {{
   const s = DATA.prediction?.strategic;
   if (!s || !s.applied) return '';
   const notesHtml = (s.notes || []).map(n => `<div class="strat-note">· ${{esc(n)}}</div>`).join('');
-  return `<div class="strat-panel"><div class="strat-header">🎯 战略修正 · λ ${{s.original_lambda}} : ${{s.original_mu}} → 修正后 ${{s.adjusted_lambda}} : ${{s.adjusted_mu}}</div><div class="strat-factors"><span class="strat-factor">主队 ×${{s.home_mult}}</span><span class="strat-factor away">客队 ×${{s.away_mult}}</span></div><div class="strat-notes">${{notesHtml}}</div></div>`;
+  const origScores = (s.original_top_scores || []).map(sc => `<div class="strat-score-item"><span class="ss">${{sc.score}}</span><span class="sp">${{pct(sc.probability)}}</span></div>`).join('');
+  const adjScores = (s.adjusted_top_scores || []).map((sc,i) => `<div class="strat-score-item ${{i===0?'reco':''}}"><span class="ss">${{i===0?'⭐ ':''}}${{sc.score}}</span><span class="sp">${{pct(sc.probability)}}</span></div>`).join('');
+  const scoresHtml = (origScores || adjScores) ? `<div class="strat-scores"><div class="strat-score-col"><div class="strat-score-title">原始推荐</div>${{origScores}}</div><div class="strat-score-col"><div class="strat-score-title">修正后推荐</div>${{adjScores}}</div></div>` : '';
+  return `<div class="strat-panel"><div class="strat-header">🎯 战略修正 · λ ${{s.original_lambda}} : ${{s.original_mu}} → 修正后 ${{s.adjusted_lambda}} : ${{s.adjusted_mu}}</div><div class="strat-factors"><span class="strat-factor">主队 ×${{s.home_mult}}</span><span class="strat-factor away">客队 ×${{s.away_mult}}</span></div>${{scoresHtml}}<div class="strat-notes">${{notesHtml}}</div></div>`;
 }}
 function renderPrediction() {{
   const p = DATA.prediction, top = p.top_scorelines || [];
