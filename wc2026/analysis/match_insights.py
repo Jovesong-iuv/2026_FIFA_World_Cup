@@ -139,10 +139,48 @@ def _profile_notes(home: str, away: str) -> list[str]:
     return notes
 
 
+def _web_search_stats(team: str) -> dict | None:
+    """联网搜索后备：当 FBref/FotMob 均失败时，用搜索引擎+LLM 获取球队统计摘要。"""
+    from wc2026.data.sources import web_search as ws
+    from wc2026.llm import provider as llm
+
+    team_zh = zh(team)
+    results = ws.web_search(
+        f"{team_zh} 2026世界杯 射门 控球 xG 数据 统计",
+        max_results=5, timeout=20,
+    )
+    if not results:
+        return None
+
+    snippets = "\n".join(
+        f"- {r['title']}: {r['snippet'][:120]}" for r in results if r.get("snippet")
+    )
+    if not snippets:
+        return None
+
+    prompt = (
+        f"以下是关于「{team_zh}」在 2026 世界杯的搜索结果摘要。\n\n{snippets}\n\n"
+        "请从中提取该队在本届世界杯的统计数据（如果有的话），输出 JSON：\n"
+        '{"goals":数字或null, "matches_played":数字或null, "xg":数字或null, '
+        '"possession_pct":数字或null, "shots_per_game":数字或null, '
+        '"takeaway":"一句话概括"}\n'
+        "只提取搜索结果中明确提到的数据，没有的填 null，不要编造。"
+    )
+    try:
+        text = llm.chat(prompt, max_tokens=400, temperature=0.2, timeout=30)
+        import json as _json
+        data = _json.loads(text.strip().strip("`").strip("json").strip())
+        data["source"] = "联网搜索+LLM"
+        return data
+    except Exception:
+        return None
+
+
 def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH) -> dict:
     """联网补全本场分场分析缓存。
 
-    使用现有免费源：FBref 射门/xG聚合、FotMob 阵容/阵型/伤停、新闻标题。
+    数据源优先级：FBref → FotMob → 联网搜索+LLM。
+    新闻源：Google News(中+英) → 英文RSS → 联网搜索后备 → 深度搜索+LLM综合分析。
     单个源失败不影响其他源写入。
     """
     data = load_insights(path)
@@ -151,20 +189,51 @@ def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH) -> dict:
     entry["data_as_of"] = datetime.now(timezone.utc).date().isoformat()
     errors: list[str] = []
 
+    # --- 1) 射门/统计数据：FBref → FotMob → 联网搜索 ---
     rows = []
     for team in (home, away):
+        got_data = False
         try:
-            rows.append(_shooting_row(team, fbref.fetch_team_shooting(team)))
+            row = _shooting_row(team, fbref.fetch_team_shooting(team))
+            if row:
+                rows.append(row)
+                got_data = True
         except Exception as exc:
             errors.append(f"FBref {zh(team)}: {exc}")
+
+        if not got_data:
             try:
-                rows.append(_fotmob_stats_row(team, _fotmob_stats_for_team(team)))
+                row = _fotmob_stats_row(team, _fotmob_stats_for_team(team))
+                if row:
+                    rows.append(row)
+                    got_data = True
             except Exception as fm_exc:
                 errors.append(f"FotMob统计 {zh(team)}: {fm_exc}")
+
+        if not got_data:
+            # 联网搜索后备
+            try:
+                ws_data = _web_search_stats(team)
+                if ws_data:
+                    row = {
+                        "team": team,
+                        "source": ws_data.get("source", "联网搜索"),
+                    }
+                    if ws_data.get("goals") is not None:
+                        row["shots_for"] = ws_data["goals"]
+                    if ws_data.get("xg") is not None:
+                        row["xg_for"] = ws_data["xg"]
+                    if ws_data.get("takeaway"):
+                        row["takeaway"] = ws_data["takeaway"]
+                    rows.append(row)
+            except Exception as ws_exc:
+                errors.append(f"联网搜索 {zh(team)}: {ws_exc}")
+
     rows = [r for r in rows if r]
     if rows:
         entry["prior_matches"] = rows
 
+    # --- 2) 战术/阵容/伤停：FotMob → 本地画像 ---
     tactical_notes = []
     availability_notes = []
     for team in (home, away):
@@ -177,14 +246,32 @@ def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH) -> dict:
         except Exception as exc:
             errors.append(f"FotMob {zh(team)}: {exc}")
 
+    # --- 3) 新闻 + 深度搜索 ---
+    news_items = []
     try:
-        items = news.fetch_for_teams([home, away], limit=6)
-        if items:
-            titles = "；".join(i.get("title", "") for i in items[:3] if i.get("title"))
+        news_items = news.fetch_for_teams([home, away], limit=8)
+        if news_items:
+            titles = "；".join(i.get("title", "") for i in news_items[:3] if i.get("title"))
             if titles:
                 availability_notes.append("相关新闻标题：" + titles)
     except Exception as exc:
         errors.append(f"News: {exc}")
+
+    # 深度搜索+LLM综合分析（当常规新闻不足 4 条时触发）
+    if len(news_items) < 4:
+        try:
+            deep = news.deep_search_and_analyze(home, away, existing_items=news_items)
+            if deep and deep.get("text"):
+                entry["deep_analysis"] = {
+                    "text": deep["text"],
+                    "sources": deep.get("sources", []),
+                    "source": deep.get("source", "deep_search"),
+                }
+                availability_notes.append(
+                    f"深度搜索情报（来源：{', '.join(deep.get('sources', ['联网']))}）"
+                )
+        except Exception as exc:
+            errors.append(f"深度搜索: {exc}")
 
     if tactical_notes:
         entry["tactical_notes"] = tactical_notes
@@ -222,6 +309,14 @@ def build_match_analysis(home: str, away: str, report: dict, insights: dict | No
     parts = [_prior_sentence(r) for r in entry.get("prior_matches", [])]
     parts += [n.rstrip("。") + "。" for n in entry.get("availability_notes", [])]
     parts += [n.rstrip("。") + "。" for n in entry.get("tactical_notes", [])]
+
+    # 深度搜索情报（联网搜索+LLM综合分析）
+    deep = entry.get("deep_analysis")
+    if deep and deep.get("text"):
+        deep_text = deep["text"].strip()
+        if deep_text:
+            parts.append(f"【深度情报】{deep_text}")
+
     if entry.get("refresh_errors"):
         parts.append("数据源提示：" + "；".join(entry["refresh_errors"][:3]) + "。")
 

@@ -123,3 +123,78 @@ def is_available() -> bool:
         return bool(chat("Reply with OK", max_tokens=64))
     except LLMError:
         return False
+
+
+def search_and_analyze(query: str, analysis_prompt: str,
+                       max_search_results: int = 6,
+                       max_tokens: int = 600,
+                       temperature: float = 0.3,
+                       timeout: float = 30) -> dict:
+    """联网搜索 + LLM 综合分析。
+
+    先用搜索引擎获取最新信息，再让 LLM 基于搜索结果生成分析。
+
+    Args:
+        query: 搜索关键词
+        analysis_prompt: 分析指令（告诉 LLM 如何分析搜索结果）
+        max_search_results: 最大搜索结果数
+        max_tokens: LLM 最大输出 token 数
+        temperature: LLM 温度
+        timeout: 总超时（秒）
+
+    Returns:
+        {
+            "text": str,           # LLM 生成的分析文本
+            "sources": [str],      # 搜索结果来源
+            "search_count": int,   # 搜索结果数量
+            "source": "search_llm" | "search_raw",  # LLM 可用时为 search_llm
+        }
+
+    Raises:
+        LLMError: LLM 不可用且无搜索结果时
+    """
+    from wc2026.data.sources import web_search as ws
+
+    # 1) 联网搜索
+    results = ws.web_search(query, max_results=max_search_results, timeout=min(timeout, 20))
+
+    if not results:
+        raise LLMError(f"联网搜索无结果: {query}")
+
+    # 2) 构建搜索结果摘要
+    snippets = []
+    sources = []
+    for r in results:
+        title = r.get("title", "")
+        snippet = r.get("snippet", "")
+        url = r.get("url", "")
+        if title:
+            snippets.append(f"- {title}\n  {snippet[:200]}")
+            sources.append(title[:50])
+
+    search_text = "\n".join(snippets)
+
+    # 3) LLM 综合分析
+    full_prompt = (
+        f"以下是联网搜索「{query}」的结果：\n\n"
+        f"{search_text}\n\n"
+        f"{analysis_prompt}\n\n"
+        "要求：只基于上述搜索结果，不要编造。信息不足的部分直接说明。"
+    )
+
+    try:
+        text = chat(full_prompt, max_tokens=max_tokens, temperature=temperature, timeout=timeout)
+        return {
+            "text": text,
+            "sources": sources[:5],
+            "search_count": len(results),
+            "source": "search_llm",
+        }
+    except LLMError:
+        # LLM 不可用，直接返回搜索摘要
+        return {
+            "text": "【搜索摘要】\n" + "\n".join(s[:120] for s in snippets[:5]),
+            "sources": sources[:5],
+            "search_count": len(results),
+            "source": "search_raw",
+        }

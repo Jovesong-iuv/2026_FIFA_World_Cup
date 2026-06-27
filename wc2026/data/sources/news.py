@@ -20,10 +20,15 @@ FEEDS = {
     "ESPN": "https://www.espn.com/espn/rss/soccer/news",
     "Guardian": "https://www.theguardian.com/football/rss",
     "Sky Sports": "https://www.skysports.com/rss/12040",
+    # 新增：更多足球新闻源
+    "Goal.com": "https://www.goal.com/feeds/en/soccer/news",
+    "Transfermarkt": "https://www.transfermarkt.com/rss/news",
 }
 
-# Google News RSS 定向搜索（按球队中文名取本地化结果），是国家队新闻的主要来源
-_GOOGLE_NEWS = "https://news.google.com/rss/search?q={q}&hl=zh-CN&gl=CN&ceid=CN:zh"
+# 中文新闻源（Google News RSS 定向搜索）
+_GOOGLE_NEWS_ZH = "https://news.google.com/rss/search?q={q}&hl=zh-CN&gl=CN&ceid=CN:zh"
+# 英文 Google News（覆盖更多国际源）
+_GOOGLE_NEWS_EN = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
 
 # 部分球队的新闻别名（英文源里的常见写法）
 _EXTRA = {
@@ -79,16 +84,74 @@ def _keywords(team: str) -> list[str]:
 
 
 def google_news_for(team: str, limit: int = 8, timeout: float = 15) -> list[dict]:
-    """Google News RSS 按球队中文名定向搜索（本地化中文结果）。失败返回 []。"""
-    q = quote(f"{zh(team)} 足球 国家队")
-    items = _parse_feed("Google News", _GOOGLE_NEWS.format(q=q), timeout)
-    for it in items:
-        it["matched"] = zh(team)
-    return items[:limit]
+    """Google News RSS 按球队定向搜索（中文+英文双语）。失败返回 []。"""
+    out, seen = [], set()
+    team_zh = zh(team)
+
+    # 中文搜索
+    q_zh = quote(f"{team_zh} 足球 国家队")
+    for it in _parse_feed("Google News(中)", _GOOGLE_NEWS_ZH.format(q=q_zh), timeout):
+        key = it.get("link") or it.get("title")
+        if key and key not in seen:
+            seen.add(key)
+            it["matched"] = team_zh
+            out.append(it)
+
+    # 英文搜索（补充国际源）
+    q_en = quote(f"{team} World Cup 2026 national team")
+    for it in _parse_feed("Google News(英)", _GOOGLE_NEWS_EN.format(q=q_en), timeout):
+        key = it.get("link") or it.get("title")
+        if key and key not in seen:
+            seen.add(key)
+            it["matched"] = team
+            out.append(it)
+
+    return out[:limit]
+
+
+def web_search_for_team(team: str, limit: int = 8, timeout: float = 20) -> list[dict]:
+    """联网搜索后备：当 RSS 结果不足时，用 DuckDuckGo/Bing 搜索球队新闻。
+
+    返回与 fetch_for_teams 相同格式的 [{source, title, link, pub, summary, matched}]。
+    """
+    from wc2026.data.sources import web_search as ws
+
+    team_zh = zh(team)
+    results = []
+
+    # 搜索中文新闻
+    zh_results = ws.search_team_news(team_zh, max_results=limit // 2, timeout=timeout)
+    for r in zh_results:
+        results.append({
+            "source": "Web搜索",
+            "title": r.get("title", ""),
+            "link": r.get("url", ""),
+            "pub": "",
+            "summary": r.get("snippet", ""),
+            "matched": team_zh,
+        })
+
+    # 搜索英文新闻（补充）
+    en_results = ws.search_duckduckgo(
+        f"{team} World Cup 2026 news injury lineup",
+        max_results=limit // 2,
+        timeout=timeout,
+    )
+    for r in en_results:
+        results.append({
+            "source": "Web搜索(英)",
+            "title": r.get("title", ""),
+            "link": r.get("url", ""),
+            "pub": "",
+            "summary": r.get("snippet", ""),
+            "matched": team,
+        })
+
+    return results[:limit]
 
 
 def fetch_for_teams(teams: list[str], limit: int = 15, timeout: float = 20) -> list[dict]:
-    """多源汇总：先按球队做 Google News 定向搜索（中文结果），再用通用英文源按队名匹配补充。"""
+    """多源汇总：Google News(中+英) → 通用英文 RSS → 联网搜索后备。"""
     out, seen = [], set()
 
     def _add(it):
@@ -97,10 +160,12 @@ def fetch_for_teams(teams: list[str], limit: int = 15, timeout: float = 20) -> l
             seen.add(key)
             out.append(it)
 
+    # 1) Google News 定向搜索（中文+英文双语）
     for t in teams:
         for it in google_news_for(t, timeout=timeout):
             _add(it)
 
+    # 2) 通用英文 RSS 按队名匹配
     kws = {kw for t in teams for kw in _keywords(t)}
     for it in fetch_all(timeout):
         text = (it["title"] + " " + it["summary"]).lower()
@@ -108,7 +173,107 @@ def fetch_for_teams(teams: list[str], limit: int = 15, timeout: float = 20) -> l
         if hit:
             _add(dict(it, matched=hit))
 
+    # 3) 联网搜索后备：当结果不足 limit 的 60% 时触发
+    if len(out) < limit * 0.6:
+        for t in teams:
+            for it in web_search_for_team(t, limit=4, timeout=timeout):
+                _add(it)
+
     return out[:limit]
+
+
+def deep_search_and_analyze(team_home: str, team_away: str,
+                            existing_items: list[dict] | None = None,
+                            timeout: float = 25) -> dict | None:
+    """深度联网搜索 + LLM 综合分析。
+
+    当常规 RSS 新闻不足时，主动联网搜索并让 LLM 综合生成赛前情报摘要。
+    包括：教练战术变化、伤停信息、士气/更衣室动态、近期表现、对手分析等。
+
+    Returns:
+        {"text": str, "sources": [str], "source": "deep_search"} 或 None
+    """
+    from wc2026.data.sources import web_search as ws
+
+    home_zh = zh(team_home)
+    away_zh = zh(team_away)
+
+    # 收集已有新闻标题
+    existing_headlines = []
+    if existing_items:
+        existing_headlines = [f"[{x.get('source','')}] {x.get('title','')}"
+                              for x in existing_items[:10]]
+
+    # 多维联网搜索
+    search_results = []
+    search_queries = [
+        f"{home_zh} 世界杯 2026 最新 伤停 阵容",
+        f"{away_zh} 世界杯 2026 最新 伤停 阵容",
+        f"{home_zh} vs {away_zh} 世界杯 前瞻 分析",
+        f"{team_home} World Cup 2026 injury news lineup",
+        f"{team_away} World Cup 2026 coach tactics formation",
+    ]
+    for q in search_queries:
+        try:
+            results = ws.web_search(q, max_results=4, timeout=timeout)
+            for r in results:
+                search_results.append({
+                    "source": "联网搜索",
+                    "title": r.get("title", ""),
+                    "snippet": r.get("snippet", ""),
+                    "url": r.get("url", ""),
+                })
+        except Exception:
+            continue
+
+    if not search_results and not existing_headlines:
+        return None
+
+    # 构建 LLM prompt
+    all_info = []
+    if existing_headlines:
+        all_info.append("【已有新闻标题】\n" + "\n".join(existing_headlines))
+    if search_results:
+        snippets = []
+        for r in search_results[:15]:
+            s = f"- [{r['source']}] {r['title']}"
+            if r.get("snippet"):
+                s += f"\n  摘要: {r['snippet'][:150]}"
+            snippets.append(s)
+        all_info.append("【联网搜索结果】\n" + "\n".join(snippets))
+
+    info_text = "\n\n".join(all_info)
+
+    prompt = (
+        f"你是一位资深足球分析师。以下是关于 {home_zh} 和 {away_zh} 的最新情报"
+        f"（来自 RSS 新闻 + 联网搜索）。\n\n"
+        f"{info_text}\n\n"
+        "请用中文生成一份简要的**赛前情报摘要**，包含以下方面（仅基于上述信息，不要编造）：\n"
+        "1. **伤停/阵容**：两队已知的伤停、缺阵、复出球员\n"
+        "2. **战术/教练**：教练近期战术调整、阵型变化、公开表态\n"
+        "3. **士气/动态**：更衣室氛围、近期表现趋势、舆论压力\n"
+        "4. **对比赛影响**：以上信息对比分预测的可能影响\n\n"
+        "要求：每项 2-3 句话，信息不足的部分直接说明'暂无明确信息'。"
+    )
+
+    try:
+        text = provider.chat(prompt, max_tokens=800, temperature=0.3, timeout=timeout)
+        sources_used = list({r.get("source", "") for r in search_results})
+        if existing_headlines:
+            sources_used.append("RSS新闻")
+        return {
+            "text": text,
+            "sources": sources_used,
+            "source": "deep_search",
+        }
+    except provider.LLMError:
+        # LLM 不可用时，直接返回搜索结果摘要
+        if search_results:
+            summary = "【联网搜索摘要】\n" + "\n".join(
+                f"- {r['title']}: {r['snippet'][:80]}" for r in search_results[:5]
+            )
+            return {"text": summary, "sources": ["联网搜索"], "source": "deep_search_raw"}
+        return None
 
 
 def analyze_news(team_home: str, team_away: str, items: list[dict]) -> dict | None:
