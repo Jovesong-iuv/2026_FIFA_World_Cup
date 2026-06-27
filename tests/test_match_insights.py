@@ -64,7 +64,9 @@ class MatchInsightsTest(unittest.TestCase):
                           side_effect=[{"formation": "4-3-3", "injured": 1},
                                        {"formation": "5-4-1", "injured": 0}]), \
                     patch("wc2026.analysis.match_insights.news.fetch_for_teams",
-                          return_value=[{"title": "Spain star returns", "source": "News", "link": "#"}]):
+                          return_value=[{"title": "Spain star returns", "source": "News", "link": "#"}]), \
+                    patch("wc2026.analysis.match_insights.news.deep_search_and_analyze",
+                          return_value=None):
                 res = refresh_match_insight("Spain", "Saudi Arabia", path=path)
 
             self.assertTrue(res["ok"])
@@ -84,7 +86,10 @@ class MatchInsightsTest(unittest.TestCase):
                        side_effect=RuntimeError("fbref down")), \
                     patch("wc2026.analysis.match_insights.squads.refresh_fm_squad",
                           side_effect=RuntimeError("fotmob down")), \
-                    patch("wc2026.analysis.match_insights.news.fetch_for_teams", return_value=[]):
+                    patch("wc2026.analysis.match_insights.news.fetch_for_teams", return_value=[]), \
+                    patch("wc2026.analysis.match_insights._web_search_stats", return_value=None), \
+                    patch("wc2026.analysis.match_insights.news.deep_search_and_analyze",
+                          return_value=None):
                 res = refresh_match_insight("Spain", "Saudi Arabia", path=path)
 
             self.assertFalse(res["ok"])
@@ -112,7 +117,9 @@ class MatchInsightsTest(unittest.TestCase):
                           ]), \
                     patch("wc2026.analysis.match_insights.squads.refresh_fm_squad",
                           return_value={"formation": "4-4-2", "injured": 0}), \
-                    patch("wc2026.analysis.match_insights.news.fetch_for_teams", return_value=[]):
+                    patch("wc2026.analysis.match_insights.news.fetch_for_teams", return_value=[]), \
+                    patch("wc2026.analysis.match_insights.news.deep_search_and_analyze",
+                          return_value=None):
                 res = refresh_match_insight("Switzerland", "Canada", path=path)
 
             self.assertFalse(res["ok"])
