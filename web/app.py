@@ -587,6 +587,27 @@ def _build_group_strategic_analysis(model, home: str, away: str,
                 }
         return None
 
+    def _find_r32_third(gletter):
+        """查找某组第三名若递补晋级，可能的 R32 对阵信息。"""
+        candidates = []
+        for idx, (h, a) in enumerate(r32):
+            for slot in (h, a):
+                if slot.startswith("3") and gletter in slot[1:]:
+                    opp = a if h == slot else h
+                    opp_info = _parse_slot(opp)
+                    opp_t, opp_p = _slot_proj(opp)
+                    candidates.append({
+                        "match_num": 73 + idx,
+                        "my_slot": slot,
+                        "opponent_slot": opp,
+                        "opponent_desc": opp_info["desc"],
+                        "opponent_team": opp_t,
+                        "opponent_team_cn": _zh(opp_t) if opp_t else "待定",
+                        "opponent_flag": _flag(opp_t) if opp_t else "",
+                        "opponent_prob": round(opp_p, 3),
+                    })
+        return candidates
+
     def _standings_json(gname):
         return [{
             "team": r["team"], "team_cn": _zh(r["team"]),
@@ -625,8 +646,10 @@ def _build_group_strategic_analysis(model, home: str, away: str,
             "sim_top2": round(sprobs.get("top2", 0), 3),
             "sim_qualify": round(sprobs.get("qualify", 0), 3),
             "sim_third": round(sprobs.get("third", 0), 3),
+            "sim_third_advance": round(sprobs.get("third_advance", 0), 3),
             "r32_first": _find_r32(gl, "1"),
             "r32_second": _find_r32(gl, "2"),
+            "r32_third": _find_r32_third(gl),
             "elo": _elo(team),
         }
 
@@ -690,6 +713,20 @@ def _build_group_strategic_analysis(model, home: str, away: str,
                 r32_text += f"（投影：{r2['opponent_flag']} {r2['opponent_team_cn']} {r2['opponent_prob']:.0%}）"
             _add("R32对位", r32_text)
 
+        # R32 对位：第三名递补
+        r3 = ta.get("r32_third", [])
+        st = ta.get("sim_third", 0)
+        sta = ta.get("sim_third_advance", 0)
+        if r3 and (st > 0.1 or sta > 0.05):
+            r3_text = f"若以第三名递补 → "
+            r3_matches = [f"第{c['match_num']}场 vs {c['opponent_desc']}" for c in r3]
+            r3_text += " / ".join(r3_matches)
+            # 找最可能的对手
+            best_c = max(r3, key=lambda c: c.get("opponent_prob", 0))
+            if best_c.get("opponent_team_cn") and best_c["opponent_team_cn"] != "待定":
+                r3_text += f"（最可能：第{best_c['match_num']}场 vs {best_c['opponent_flag']} {best_c['opponent_team_cn']} {best_c['opponent_prob']:.0%}）"
+            _add("R32对位", r3_text)
+
         # 战略考量：R32 对手实力分析
         likely_first = sf > 0.5
         r_proj = r1 if likely_first else r2
@@ -710,6 +747,14 @@ def _build_group_strategic_analysis(model, home: str, away: str,
         elif sq < 0.4 and ta["played"] >= 2:
             _add("战略考量", f"{cn}出线形势危急，本场必须全力争胜，战意极高")
 
+        # 第三名争夺：争取最佳第三递补
+        if st > 0.15 and ta["played"] >= 2 and sq < 0.8:
+            _add("第三名争夺", f"{cn}有 {st:.0%} 概率获得小组第三，需争取作为最佳第三名之一递补晋级（12组第三取前8名）")
+            if sta > 0.05:
+                _add("第三名争夺", f"当前模拟递补晋级概率 {sta:.0%}，净胜球({'+' if gd >= 0 else ''}{gd})和进球数({gf})对最佳第三排名至关重要，需尽可能争取进球")
+            if st > 0.4 and sf < 0.3:
+                _add("战略考量", f"{cn}大概率获得第三名（{st:.0%}），本场不仅要争胜还要争取多进球，净胜球和进球数直接影响能否作为最佳第三递补晋级")
+
         # 进球动机
         if sq > 0.9 and sf > 0.7:
             star = _STAR.get(ta["team"])
@@ -722,6 +767,8 @@ def _build_group_strategic_analysis(model, home: str, away: str,
         _add("同组对决", f"双方同处{gl}组，本场结果直接决定小组排名与出线归属，胜者占据主动权")
         if ha["sim_qualify"] > 0.8 and aa["sim_qualify"] > 0.8:
             _add("同组对决", f"双方均已接近出线，本场可能演变为争夺头名之战，平局亦可接受的情况下战意可能降低")
+        if ha.get("sim_third", 0) > 0.2 and aa.get("sim_third", 0) > 0.2:
+            _add("同组对决", f"双方均有较大概率获得第三名（{ha['team_cn']} {ha.get('sim_third',0):.0%} / {aa['team_cn']} {aa.get('sim_third',0):.0%}），本场净胜球和进球数直接影响最佳第三递补排名，战意极高")
     elif ha and aa:
         for ta in [ha, aa]:
             r1 = ta.get("r32_first")
@@ -794,6 +841,12 @@ def _strategic_factors(gsa: dict, model, home: str, away: str) -> tuple:
         elif sq < 0.1 and played >= 2:
             mult *= 0.93
             notes.append(f"{cn}基本出局，战意下降，进球×0.93")
+
+        # 争夺最佳第三递补 → 战意提升（净胜球/进球数关键）
+        st = ta.get("sim_third", 0)
+        if st > 0.3 and sq < 0.8 and played >= 2:
+            mult *= 1.05
+            notes.append(f"{cn}大概率小组第三({st:.0%})，争取最佳第三递补，净胜球/进球关键，进球×1.05")
 
         # 金靴奖动机
         if sq > 0.9 and sf > 0.7:
@@ -912,7 +965,13 @@ body {{
   background:radial-gradient(circle at 20% 20%,rgba(59,130,246,.16),transparent 34%),
              radial-gradient(circle at 82% 12%,rgba(139,92,246,.16),transparent 30%),
              linear-gradient(135deg,#070b14,#172044 48%,#211033);
+  overflow-y:auto;
 }}
+/* 隐藏滚动条但保留滚动功能 */
+body::-webkit-scrollbar {{ display:none; }}
+body {{ scrollbar-width:none; -ms-overflow-style:none; }}
+html {{ scrollbar-width:none; -ms-overflow-style:none; }}
+html::-webkit-scrollbar {{ display:none; }}
 .wrap {{ padding:22px; }}
 .card {{
   border:1px solid var(--line); border-radius:18px; background:var(--glass);
@@ -1187,6 +1246,9 @@ function renderGroupStrategicAnalysis() {{
     h += `<div class="gsa-probs">`;
     h += `<div class="gsa-prob-row"><span>出线</span><div class="gsa-prob-bar"><div class="gsa-fill" style="width:${{Math.round(t.sim_qualify*100)}}%;background:#10b981"></div></div><b>${{pct(t.sim_qualify)}}</b></div>`;
     h += `<div class="gsa-prob-row"><span>头名</span><div class="gsa-prob-bar"><div class="gsa-fill" style="width:${{Math.round(t.sim_first*100)}}%;background:#3b82f6"></div></div><b>${{pct(t.sim_first)}}</b></div>`;
+    if (t.sim_third_advance > 0.01) {{
+      h += `<div class="gsa-prob-row"><span>第三递补</span><div class="gsa-prob-bar"><div class="gsa-fill" style="width:${{Math.round(t.sim_third_advance*100)}}%;background:#f59e0b"></div></div><b>${{pct(t.sim_third_advance)}}</b></div>`;
+    }}
     h += `</div>`;
     h += `<div class="gsa-section-title">小组积分榜</div>`;
     h += sTable(t.standings, t.team);
@@ -1211,6 +1273,17 @@ function renderGroupStrategicAnalysis() {{
       }}
       h += `</div>`;
     }}
+    if (t.r32_third && t.r32_third.length > 0) {{
+      t.r32_third.forEach(r => {{
+        h += `<div class="gsa-r32-item" style="border-color:rgba(245,158,11,.3)"><div class="gsa-r32-cond">若第三递补</div><div class="gsa-r32-match">第${{r.match_num}}场</div><div class="gsa-r32-opp">${{r.opponent_desc}}</div>`;
+        if (r.opponent_team_cn && r.opponent_team_cn !== '待定') {{
+          h += `<div class="gsa-r32-proj">${{r.opponent_flag}} ${{r.opponent_team_cn}} <span class="gsa-prob-tag">${{pct(r.opponent_prob)}}</span></div>`;
+        }} else {{
+          h += `<div class="gsa-r32-proj muted">待定</div>`;
+        }}
+        h += `</div>`;
+      }});
+    }}
     h += `</div></div>`;
     return h;
   }}
@@ -1220,7 +1293,7 @@ function renderGroupStrategicAnalysis() {{
       `<div class="gsa-note"><span class="gsa-note-cat">${{n.category}}</span><span class="gsa-note-text">${{esc(n.text)}}</span></div>`
     ).join('') + '</div>';
   }}
-  return `<div class="card"><div class="title"><div><h2>小组赛深度战略分析</h2><p>出线形势 · 32强对位 · 战略考量 · 跨组联动 · 进球动机</p></div></div><div class="gsa-grid">${{tBox(gsa.home)}}${{tBox(gsa.away)}}</div>${{nHtml}}</div>`;
+  return `<div class="card"><div class="title"><div><h2>小组赛深度战略分析</h2><p>出线形势 · 32强对位 · 第三名递补 · 战略考量 · 跨组联动 · 进球动机</p></div></div><div class="gsa-grid">${{tBox(gsa.home)}}${{tBox(gsa.away)}}</div>${{nHtml}}</div>`;
 }}
 function drawRadar() {{
   const c = $('#radar'); if(!c) return; const ctx=c.getContext('2d'), W=c.width,H=c.height,cx=W/2,cy=H/2,R=120;
@@ -1238,51 +1311,30 @@ function drawDonut() {{
 $('#app').innerHTML = renderTeamComparison()+renderDimensions()+renderPrediction()+renderGroupStrategicAnalysis()+renderOdds()+renderSummary()+renderChampion();
 drawRadar(); drawDonut();
 (function() {{
-  var pDoc = null;
-  try {{ pDoc = window.parent.document; }} catch(e) {{}}
-
-  if (pDoc && !pDoc.getElementById('stBackTop')) {{
-    var pBtn = pDoc.createElement('button');
-    pBtn.id = 'stBackTop';
-    pBtn.innerHTML = '\u2191';
-    pBtn.title = '\u56de\u5230\u9876\u90e8';
-    var s = pBtn.style;
-    s.position = 'fixed'; s.right = '24px'; s.top = '50%';
-    s.transform = 'translateY(-50%)'; s.width = '46px'; s.height = '46px';
-    s.borderRadius = '50%'; s.cursor = 'pointer'; s.zIndex = '99999';
-    s.background = 'rgba(59,130,246,.9)'; s.color = '#fff'; s.border = 'none';
-    s.fontSize = '22px'; s.lineHeight = '46px'; s.textAlign = 'center';
-    s.boxShadow = '0 4px 16px rgba(0,0,0,.3)'; s.opacity = '0';
-    s.pointerEvents = 'none'; s.transition = 'opacity .3s, background .2s';
-    pDoc.body.appendChild(pBtn);
-
-    pBtn.addEventListener('click', function() {{
-      try {{ window.parent.scrollTo({{ top: 0, behavior: 'smooth' }}); }} catch(e) {{}}
-    }});
-    pBtn.addEventListener('mouseenter', function() {{ pBtn.style.background = 'rgba(59,130,246,1)'; }});
-    pBtn.addEventListener('mouseleave', function() {{ pBtn.style.background = 'rgba(59,130,246,.9)'; }});
-
-    var pWin = window.parent;
-    pWin.addEventListener('scroll', function() {{
-      if (pWin.scrollY > 400) {{ pBtn.style.opacity = '1'; pBtn.style.pointerEvents = 'auto'; }}
-      else {{ pBtn.style.opacity = '0'; pBtn.style.pointerEvents = 'none'; }}
-    }});
-  }}
-
   var btn = document.getElementById('backTop');
-  if (btn) {{
-    if (pDoc && pDoc.getElementById('stBackTop')) {{
-      btn.style.display = 'none';
+  if (!btn) return;
+
+  // 点击按钮：同时滚动 iframe 和父页面回顶部
+  btn.addEventListener('click', function() {{
+    window.scrollTo({{ top: 0, behavior: 'smooth' }});
+    try {{ window.parent.scrollTo({{ top: 0, behavior: 'smooth' }}); }} catch(e) {{}}
+  }});
+
+  // 监听滚动：iframe 内滚动 + 父页面滚动
+  function checkScroll() {{
+    var iframeY = window.scrollY || window.pageYOffset || 0;
+    var parentY = 0;
+    try {{ parentY = window.parent.scrollY || window.parent.pageYOffset || 0; }} catch(e) {{}}
+    if (iframeY > 300 || parentY > 300) {{
+      btn.classList.add('show');
     }} else {{
-      btn.addEventListener('click', function() {{
-        window.scrollTo({{ top: 0, behavior: 'smooth' }});
-      }});
-      window.addEventListener('scroll', function() {{
-        if (window.scrollY > 400) btn.classList.add('show');
-        else btn.classList.remove('show');
-      }});
+      btn.classList.remove('show');
     }}
   }}
+
+  window.addEventListener('scroll', checkScroll);
+  try {{ window.parent.addEventListener('scroll', checkScroll); }} catch(e) {{}}
+  checkScroll();
 }})();
 </script>
 </body>
@@ -1503,6 +1555,17 @@ def load_fixtures():
     except Exception:
         pass
     return fixtures
+
+
+def _get_wc_teams(model, fixtures):
+    """从 fixtures 中提取世界杯参赛队伍（排除淘汰赛占位符如 1A、2B 等）。"""
+    wc_set = set()
+    for f in fixtures:
+        for key in ("home_team", "away_team"):
+            t = f.get(key, "")
+            if t and t in model.teams:
+                wc_set.add(t)
+    return sorted(wc_set, key=zh)
 
 
 @st.cache_data
@@ -2107,7 +2170,7 @@ def render_team_query(model) -> None:
     from wc2026.data.sources import fotmob as fotmob_mod
 
     render_hero("球队查询", "单队排名、近况、阵容、新闻与轮换风险", "TEAM LOOKUP")
-    teams = sorted(model.teams, key=zh)
+    teams = _get_wc_teams(model, fixtures)
     c1, c2 = st.columns([1.2, 2])
     selected = c1.selectbox("选择球队", teams, format_func=lambda t: f"{flag_emoji(t)} {zh(t)}")
     query = c2.text_input("快速搜索（中 / 英文）", key="team_lookup_q").strip().lower()
@@ -2667,7 +2730,7 @@ if mode == "按赛程" and fixtures:
     default_neutral = home not in HOSTS
 else:
     selected_fixture = None
-    teams = model.teams
+    teams = _get_wc_teams(model, fixtures)
     di = teams.index("Spain") if "Spain" in teams else 0
     ai = teams.index("Germany") if "Germany" in teams else 1
     c1, c2 = st.columns(2)
