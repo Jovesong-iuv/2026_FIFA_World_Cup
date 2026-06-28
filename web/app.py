@@ -1889,6 +1889,27 @@ def _adjustments_expander() -> None:
                    "(删除 data/team_adjustments.json 或重置即恢复赛前模型)。")
 
 
+_STAGE_LABELS = {4: "32进16", 5: "16进8", 6: "8进4", 7: "半决赛", 8: "决赛"}
+
+
+def _detect_current_stage(ko_fixtures):
+    """根据淘汰赛完赛情况检测当前阶段。
+    返回 (label, round_number) 如 ("32进16", 4)。淘汰赛尚未开始返回 None。"""
+    if not ko_fixtures:
+        return None
+    rounds_unplayed, rounds_played = set(), set()
+    for f in ko_fixtures:
+        rn = f["round_number"]
+        if f.get("home_score") is not None:
+            rounds_played.add(rn)
+        else:
+            rounds_unplayed.add(rn)
+    current = min(rounds_unplayed) if rounds_unplayed else (max(rounds_played) if rounds_played else None)
+    if current is None:
+        return None
+    return _STAGE_LABELS.get(current, f"第{current}轮"), current
+
+
 def _auto_group_state(model, fixture, home: str, away: str):
     """末轮(赛事进行中)从当前积分自动推导战意 group_state；非末轮/无意义 → (None, '')。"""
     if not fixture or not fixture.get("group_name"):
@@ -1934,6 +1955,11 @@ def render_group_stage(model) -> None:
         section_title("小组出线概率")
         st.warning("暂无可用的小组赛程数据（需先刷新 2026 赛程）。")
         return
+
+    # 淘汰赛阶段提示
+    _ko_stg = _detect_current_stage(load_knockout_fixtures())
+    if _ko_stg:
+        st.info(f"小组赛已全部结束，以下为最终积分榜与出线结果。淘汰赛详情请查看「淘汰赛」页面。")
 
     section_title("小组积分榜")
     st.caption("基于已完赛比分的真实积分(积分>净胜球>进球>相互战绩)；"
@@ -2028,6 +2054,209 @@ def render_group_stage(model) -> None:
                "投影球队为当前小组模拟的最可能占位，随赛果变化。R16 之后由 32 强结果决定，晋级概率见上方夺冠表。")
 
 
+def render_knockout_stage(model) -> None:
+    """淘汰赛：实时对阵卡片 + 晋级概率 + 焦点分析。"""
+    render_hero("淘汰赛", "2026 世界杯淘汰赛实时对阵与晋级分析", "KNOCKOUT STAGE")
+    ko = load_knockout_fixtures()
+    if not ko:
+        st.warning("暂无淘汰赛赛程数据，请先刷新赛程。")
+        return
+
+    from wc2026.analysis import groups as _grp, tournament as _tour
+    from wc2026.data.flags import flag_emoji as _flag
+    from wc2026.analysis import ranking as _rk
+    from wc2026.analysis import schedule as _sch
+
+    stage_info = _detect_current_stage(ko)
+    current_round = stage_info[1] if stage_info else 4
+    current_label = stage_info[0] if stage_info else "32进16"
+
+    # 阶段选择器
+    available_rounds = sorted({f["round_number"] for f in ko})
+    round_options = [(r, _STAGE_LABELS.get(r, f"第{r}轮")) for r in available_rounds]
+    round_labels = [lbl for _, lbl in round_options]
+    default_idx = round_options.index((current_round, current_label)) if (current_round, current_label) in round_options else 0
+    sel_label = st.selectbox("选择轮次", round_labels, index=default_idx, key="ko_round")
+    sel_round = [r for r, lbl in round_options if lbl == sel_label][0]
+
+    matches = [f for f in ko if f["round_number"] == sel_round]
+
+    # 小组赛 standings 用于历史数据参考
+    gd = _grp.load_group_data(model)
+    standings = _grp.compute_standings(gd) if gd else {}
+    rank_map = _rk.world_rank_map(model)
+
+    # slot 投影（用于未确定队伍）
+    def _find_group_of(team):
+        for gname, data in gd.items():
+            if team in data["teams"]:
+                return gname
+        return None
+
+    def _team_standings(team):
+        """返回该队在小组赛中的战绩摘要 dict。"""
+        for gname, rows in standings.items():
+            for r in rows:
+                if r["team"] == team:
+                    return r
+        return None
+
+    def _resolve_team(f, side):
+        """解析一边的队伍：优先 home_team/away_team（已确定），否则用 slot code。"""
+        team = f.get(f"{side}_team")
+        src = f.get(f"{side}_src")
+        if team and team in model.teams:
+            return team, False  # (team_name, is_slot)
+        if src:
+            return src, True  # (slot_code, is_slot)
+        return "待定", True
+
+    # ── 对阵卡片 ──
+    section_title(f"{_STAGE_LABELS.get(sel_round, sel_label)} · 对阵一览")
+    cols = st.columns(2)
+    for i, f in enumerate(matches):
+        mn = f["match_number"]
+        h, h_slot = _resolve_team(f, "home")
+        a, a_slot = _resolve_team(f, "away")
+        finished = f.get("home_score") is not None
+        bj = _sch.beijing(f.get("date_utc")) if f.get("date_utc") else {"full": "—"}
+
+        def _team_line(team, is_slot, side):
+            if is_slot:
+                return (f'<span style="color:var(--wc-muted);font-style:italic;">{team}</span>')
+            rk_info = rank_map.get(team)
+            rk_str = f'<span style="color:var(--wc-muted);font-size:11px;">#{rk_info[0]}</span>' if rk_info else ""
+            ts = _team_standings(team)
+            ts_str = ""
+            if ts:
+                ts_str = (f'<span style="font-size:11px;color:var(--wc-muted);">'
+                          f'小组赛 {ts["w"]}-{ts["d"]}-{ts["l"]} · {ts["pts"]}分 · '
+                          f'净胜{ts["gd"]:+d} · 进{ts["gf"]}</span>')
+            return (f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    f'<span>{_flag(team)} <b>{zh(team)}</b> {rk_str}</span></div>'
+                    + (f'<div style="margin-top:2px;">{ts_str}</div>' if ts_str else ""))
+
+        # 胜率条（仅未完赛且两队都已确定时计算）
+        prob_bar = ""
+        if not finished and not h_slot and not a_slot:
+            try:
+                probs = predict_1x2_for_match(f, neutral=True)["probs"]
+                ph, pd, pa = probs["home"], probs["draw"], probs["away"]
+                prob_bar = (
+                    f'<div style="display:flex;height:7px;border-radius:5px;overflow:hidden;margin:6px 0;">'
+                    f'<div style="width:{ph * 100:.0f}%;background:#16a34a;"></div>'
+                    f'<div style="width:{pd * 100:.0f}%;background:#9aa7b6;"></div>'
+                    f'<div style="width:{pa * 100:.0f}%;background:#2563eb;"></div></div>'
+                    f'<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--wc-muted);">'
+                    f'<span>胜 {ph:.0%}</span><span>平 {pd:.0%}</span><span>负 {pa:.0%}</span></div>'
+                )
+            except Exception:
+                pass
+
+        score_html = ""
+        if finished:
+            score_html = (f'<div style="font-size:20px;font-weight:800;color:#16a34a;text-align:center;'
+                          f'margin:6px 0;">{int(f["home_score"])} : {int(f["away_score"])}</div>')
+            time_html = f'<span style="color:var(--wc-muted);font-size:12px;">{bj["full"]}（北京）· 已完赛</span>'
+        else:
+            time_html = f'<span style="color:var(--wc-muted);font-size:12px;">⏳ {bj["full"]}（北京）</span>'
+
+        border_style = "dashed" if (h_slot or a_slot) else "solid"
+        opacity = "opacity:0.75;" if finished else ""
+        slot_tag = ('<span style="background:#f59e0b;color:#000;font-size:10px;padding:1px 6px;'
+                    'border-radius:8px;margin-left:6px;">待定</span>') if (h_slot or a_slot) else ""
+
+        card = (
+            f'<div style="border:1px {border_style} var(--wc-line);border-radius:10px;padding:12px 14px;'
+            f'margin-bottom:12px;background:var(--wc-surface);{opacity}">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+            f'<span style="font-size:12px;color:var(--wc-muted);">M{mn} · 📍{f.get("location", "")}</span>'
+            f'{time_html}{slot_tag}</div>'
+            f'{_team_line(h, h_slot, "home")}'
+            f'{score_html}'
+            f'<div style="border-top:1px solid var(--wc-line);margin:6px 0;"></div>'
+            f'{_team_line(a, a_slot, "away")}'
+            f'{prob_bar}'
+            f'</div>'
+        )
+        with cols[i % 2]:
+            st.markdown(card, unsafe_allow_html=True)
+
+    # ── 晋级概率总览 ──
+    st.markdown("---")
+    section_title("🏆 晋级概率总览")
+    try:
+        sig = _grp.played_signature(gd) if gd else ""
+        n_sims = 5000
+        tkey = f"ko_toursim:{n_sims}:{hash(sig)}"
+        if tkey not in st.session_state:
+            with st.spinner(f"蒙特卡洛模拟 {n_sims} 次…"):
+                st.session_state[tkey] = _tour.simulate_tournament(model, gd, n_sims=n_sims)
+        tour = st.session_state[tkey]
+        import pandas as pd
+        # tour = {team: {r16, qf, sf, final, champion}}
+        col_labels = {"r16": "进16强", "qf": "进8强", "sf": "进4强", "final": "进决赛", "champion": "夺冠"}
+        # 根据当前阶段隐藏已过去的列
+        skip_before = {4: [], 5: ["r16"], 6: ["r16", "qf"], 7: ["r16", "qf", "sf"], 8: ["r16", "qf", "sf", "final"]}
+        skip_cols = skip_before.get(sel_round, [])
+        show_keys = [k for k in ["r16", "qf", "sf", "final", "champion"] if k not in skip_cols]
+        trows = sorted(tour.items(), key=lambda kv: kv[1]["champion"], reverse=True)
+
+        def _tcell(t):
+            rs = rank_map.get(t)
+            return f"{_flag(t)} {zh(t)}" + (f"（#{rs[0]}）" if rs and rs[0] else "")
+
+        df_rows = []
+        for t, r in trows:
+            row = {"球队": _tcell(t)}
+            for k in show_keys:
+                row[col_labels[k]] = f"{r[k]:.1%}" if r[k] < 0.1 else f"{r[k]:.0%}"
+            df_rows.append(row)
+        st.dataframe(pd.DataFrame(df_rows), hide_index=True, width="stretch")
+        st.caption(f"基于 {n_sims} 次蒙特卡洛模拟；平局按加时/点球近似处理。")
+    except Exception as exc:
+        st.warning(f"晋级概率模拟暂不可用：{exc}")
+
+    # ── 焦点对决 ──
+    st.markdown("---")
+    section_title("🔥 本轮焦点")
+    spotlights = []
+    for f in matches:
+        h, h_slot = _resolve_team(f, "home")
+        a, a_slot = _resolve_team(f, "away")
+        if h_slot or a_slot or f.get("home_score") is not None:
+            continue
+        try:
+            probs = predict_1x2_for_match(f, neutral=True)["probs"]
+            margin = abs(probs["home"] - probs["away"])
+            spotlights.append((margin, f, probs))
+        except Exception:
+            pass
+    spotlights.sort(key=lambda x: x[0])  # 最接近的排前面
+    for _, f, probs in spotlights[:3]:
+        h, a = f["home_team"], f["away_team"]
+        hr, ar = rank_map.get(h), rank_map.get(a)
+        ph, pd, pa = probs["home"], probs["draw"], probs["away"]
+        h_ts, a_ts = _team_standings(h), _team_standings(a)
+        h_line = f"{_flag(h)} {zh(h)}" + (f" (#{hr[0]})" if hr else "")
+        a_line = f"{_flag(a)} {zh(a)}" + (f" (#{ar[0]})" if ar else "")
+        st.markdown(f"**{h_line}** vs **{a_line}**")
+        if h_ts and a_ts:
+            st.caption(f"小组赛：{zh(h)} {h_ts['w']}-{h_ts['d']}-{h_ts['l']} {h_ts['pts']}分 · "
+                       f"{zh(a)} {a_ts['w']}-{a_ts['d']}-{a_ts['l']} {a_ts['pts']}分")
+        bar = (
+            f'<div style="display:flex;height:9px;border-radius:6px;overflow:hidden;margin:4px 0 8px;">'
+            f'<div style="width:{ph * 100:.0f}%;background:#16a34a;"></div>'
+            f'<div style="width:{pd * 100:.0f}%;background:#9aa7b6;"></div>'
+            f'<div style="width:{pa * 100:.0f}%;background:#2563eb;"></div></div>'
+        )
+        st.markdown(bar, unsafe_allow_html=True)
+        st.caption(f"胜 {ph:.0%} · 平 {pd:.0%} · 负 {pa:.0%} · "
+                   f"📍 {f.get('location', '')} · ⏳ {_sch.beijing(f.get('date_utc'))['full']}")
+
+
+
+
 def _group_short(group: str) -> str:
     if group and group.startswith("Group "):
         return group.replace("Group ", "") + "组"
@@ -2116,6 +2345,11 @@ def render_home(model) -> None:
                 "FIFA World Cup 26 · 美国 / 加拿大 / 墨西哥",
                 "AI-POWERED PREDICTION")
     st.caption("模型：Elo + Dixon-Coles + 赔率价值模型")
+    # 淘汰赛阶段提示
+    _ko_fixtures = load_knockout_fixtures()
+    _stage_info = _detect_current_stage(_ko_fixtures)
+    if _stage_info:
+        st.info(f"🏆 淘汰赛进行中 · **{_stage_info[0]}** · 查看「淘汰赛」页面获取对阵详情与晋级概率。")
     if not fixtures:
         st.warning("暂无可预测赛程（需先刷新 2026 赛程或初始化数据）。")
         return
@@ -2295,6 +2529,9 @@ def render_schedule(model) -> None:
     from wc2026.data.flags import flag_emoji
     from datetime import datetime, timezone
     section_title("小组赛赛程")
+    # 淘汰赛阶段提示
+    if _detect_current_stage(load_knockout_fixtures()):
+        st.info("小组赛赛程已全部结束。淘汰赛赛程请查看「淘汰赛」页面。")
     if not fixtures:
         st.warning("暂无赛程数据（需先刷新 2026 赛程）。")
         return
@@ -2373,6 +2610,9 @@ def render_bold_predictions(model) -> None:
     from wc2026.analysis import ranking as rk
 
     section_title("⚡ 大胆预测 · 比分 / 进球 / 冷门")
+    # 淘汰赛阶段提示
+    if _detect_current_stage(load_knockout_fixtures()):
+        st.info("小组赛预测已完成。淘汰赛逐场预测请在「单场分析」中查看。")
     st.caption("以下预测基于当前模型比分矩阵，结合实际比赛中比分的高度随机性，给出多比分参考与冷门提醒。"
                "模型结论仅供娱乐参考，请理性参与。")
 
@@ -2523,6 +2763,9 @@ def render_audit(model) -> None:
     from wc2026.analysis import audit as _audit
     from wc2026.analysis.imminent import load_all_prematch_snapshots
     section_title("赛后复盘：模型 vs 市场 vs 实际")
+    # 淘汰赛阶段提示
+    if _detect_current_stage(load_knockout_fixtures()):
+        st.info("目前复盘数据仅覆盖小组赛，淘汰赛复盘将在比赛结束后自动添加。")
     if not fixtures:
         st.warning("暂无赛程数据（需先刷新 2026 赛程）。")
         return
@@ -2664,7 +2907,7 @@ render_hero(
     "比分概率、盘口价值、晋级之路与证据分析集中在一个可操作界面中。模型结论仅供参考，请理性参与并遵守当地法规。",
 )
 
-page_options = ["首页", "小组赛赛程", "球队查询", "单场分析", "小组出线", "大胆预测", "赛后复盘", "AI 分析师", "晋级之路"]
+page_options = ["首页", "淘汰赛", "单场分析", "晋级之路", "小组赛赛程", "小组出线", "球队查询", "大胆预测", "赛后复盘", "AI 分析师"]
 if is_owner():
     page_options.append("访问记录")
 if user["role"] == "admin":
@@ -2674,6 +2917,9 @@ render_admin_user_panel()
 render_access_banner()
 if page == "首页":
     render_home(model)
+    st.stop()
+if page == "淘汰赛":
+    render_knockout_stage(model)
     st.stop()
 if page == "访问记录":
     render_access_log()
@@ -2713,20 +2959,42 @@ if mode == "按赛程" and fixtures:
     groups = sorted({f.get("group_name") or "淘汰赛" for f in fixtures})
     c1, c2 = st.columns([1, 2.4])
     g = c1.selectbox("分组", ["全部"] + groups)
-    flist = _sch.sort_fixtures(
-        [f for f in fixtures if g == "全部" or (f.get("group_name") or "淘汰赛") == g], _dt.now(_tz.utc))
+
+    _is_ko = (g == "淘汰赛")
+    if _is_ko:
+        _ko_all = load_knockout_fixtures()
+        # 仅显示有确定队伍的比赛（或全部 if 暂无确定比赛）
+        _ko_resolved = [f for f in _ko_all if f.get("home_team") and f["home_team"] in model.teams
+                        and f.get("away_team") and f["away_team"] in model.teams]
+        flist = _ko_resolved if _ko_resolved else _ko_all
+        flist = sorted(flist, key=lambda f: f.get("date_utc") or "")
+    else:
+        flist = _sch.sort_fixtures(
+            [f for f in fixtures if g == "全部" or (f.get("group_name") or "淘汰赛") == g], _dt.now(_tz.utc))
 
     def _fx_label(i):
         f = flist[i]
+        ht = f.get("home_team", "") or f.get("home_src", "?")
+        at = f.get("away_team", "") or f.get("away_src", "?")
+        ht_zh = zh(ht) if ht in model.teams else ht
+        at_zh = zh(at) if at in model.teams else at
         res = _sch.match_result(f.get("home_score"), f.get("away_score"))
-        tag = f"✅ {res['score']}" if res["finished"] else _sch.beijing(f["date_utc"])["full"]
-        return f"{zh(f['home_team'])} vs {zh(f['away_team'])}（{tag}）"
+        tag = f"✅ {res['score']}" if res["finished"] else (_sch.beijing(f["date_utc"])["full"] if f.get("date_utc") else "—")
+        rn = f.get("round_number", "")
+        stage_tag = _STAGE_LABELS.get(rn, f"第{rn}轮") if rn and rn >= 4 else (f.get("group_name") or "")
+        return f"M{f.get('match_number','')} · {stage_tag} · {ht_zh} vs {at_zh}（{tag}）"
 
     idx = c2.selectbox("场次", range(len(flist)), format_func=_fx_label)
     sel = flist[idx]
     selected_fixture = sel
-    home, away = sel["home_team"], sel["away_team"]
-    venue_info = f"🗓 {_sch.beijing(sel['date_utc'])['full']}（北京） · {sel.get('group_name') or '淘汰赛'} · 📍{sel['location']}"
+    home = sel.get("home_team") or sel.get("home_src") or "Unknown"
+    away = sel.get("away_team") or sel.get("away_src") or "Unknown"
+    _sel_rn = sel.get("round_number", 0)
+    if _sel_rn and _sel_rn >= 4:
+        _stage_lbl = _STAGE_LABELS.get(_sel_rn, f"第{_sel_rn}轮")
+        venue_info = f"🗓 {(_sch.beijing(sel['date_utc'])['full'] if sel.get('date_utc') else '—')}（北京） · {_stage_lbl} · 📍{sel.get('location','')}"
+    else:
+        venue_info = f"🗓 {_sch.beijing(sel['date_utc'])['full']}（北京） · {sel.get('group_name') or '淘汰赛'} · 📍{sel.get('location','')}"
     default_neutral = home not in HOSTS
 else:
     selected_fixture = None
@@ -2767,6 +3035,10 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 if home == away:
     st.warning("请选择两支不同的球队。")
+    st.stop()
+
+if home not in model.teams or away not in model.teams:
+    st.warning("该比赛队伍尚未确定（slot 待定），请选择已有确定队伍的比赛。")
     st.stop()
 
 section_title(f"{zh(home)} vs {zh(away)}")
@@ -2812,8 +3084,12 @@ cl = clemente.predict(model, home, away, neutral,
                       away_formation=(_sq_a or {}).get("formation"),
                       squad_value_home=(_val_h or None), squad_value_away=(_val_a or None),
                       finishing_home=_fin_h, finishing_away=_fin_a)
-# 战略分析回灌：根据出线形势/R32对位/金靴动机/对手实力修正预测
-_gsa_data = _build_group_strategic_analysis(model, home, away, selected_fixture, fixtures)
+# 战略分析回灌：根据出线形势/R32对位/金靴动机/对手实力修正预测（仅小组赛）
+_is_knockout_match = selected_fixture and selected_fixture.get("round_number", 0) >= 4
+if _is_knockout_match:
+    _gsa_data = {"available": False, "text": "淘汰赛无小组赛战略因素"}
+else:
+    _gsa_data = _build_group_strategic_analysis(model, home, away, selected_fixture, fixtures)
 _strat_h, _strat_a, _strat_notes = _strategic_factors(_gsa_data, model, home, away)
 _apply_strategic_adjustment(cl, _strat_h, _strat_a, _strat_notes)
 mat = cl["matrix"]
