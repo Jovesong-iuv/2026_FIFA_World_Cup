@@ -84,7 +84,179 @@ def _pick(probs: dict) -> str:
     return max(probs, key=probs.get)
 
 
-def match_audit(model, fixture, *, neutral=True, fixtures=None, snapshot=None, conn=None) -> dict:
+def _stage(fixture: dict) -> dict:
+    rn = fixture.get("round_number")
+    try:
+        rn_int = int(rn)
+    except (TypeError, ValueError):
+        rn_int = 0
+    if rn_int >= 4:
+        labels = {4: "32强淘汰赛", 5: "16强淘汰赛", 6: "四分之一决赛", 7: "半决赛", 8: "决赛/三四名"}
+        return {"type": "knockout", "label": labels.get(rn_int, "淘汰赛")}
+    return {"type": "group", "label": fixture.get("group_name") or "小组赛"}
+
+
+def _insight_entry(home: str, away: str, insights: dict | None) -> dict | None:
+    if insights is None:
+        try:
+            from wc2026.analysis import match_insights
+            insights = match_insights.load_insights()
+        except Exception:
+            insights = {}
+    matches = (insights or {}).get("matches", {})
+    keys = (f"{home}::{away}", f"{away}::{home}", f"{home}__{away}", f"{away}__{home}")
+    return next((matches[k] for k in keys if k in matches), None)
+
+
+def _team_process(entry: dict | None, team: str) -> dict:
+    out = {"xg": None, "shots": None}
+    for row in (entry or {}).get("prior_matches", []):
+        if row.get("team") != team:
+            continue
+        if row.get("xg_for") is not None:
+            out["xg"] = float(row["xg_for"])
+        if row.get("shots_for") is not None:
+            out["shots"] = int(row["shots_for"])
+        break
+    return out
+
+
+def _event_flags(entry: dict | None) -> list[str]:
+    text = " ".join(
+        [str((entry or {}).get("deep_analysis", {}).get("text", ""))]
+        + [str(x) for x in (entry or {}).get("tactical_notes", [])]
+        + [str(x) for x in (entry or {}).get("availability_notes", [])]
+    )
+    checks = [
+        ("penalty_shootout", ("点球大战", "点球")),
+        ("red_card", ("红牌", "罚下")),
+        ("injury_exit", ("伤退", "受伤离场")),
+        ("own_goal", ("乌龙", "own goal")),
+    ]
+    return [key for key, words in checks if any(w in text for w in words)]
+
+
+def _model_update_signal(audit: dict, fixture: dict, entry: dict | None) -> dict:
+    """把赛后偏差分成：实力偏差 / 对位偏差 / 随机事件 / 无需修正。"""
+    home, away = audit["match"]["home"], audit["match"]["away"]
+    hs, as_ = int(fixture.get("home_score") or 0), int(fixture.get("away_score") or 0)
+    h_proc, a_proc = _team_process(entry, home), _team_process(entry, away)
+    flags = _event_flags(entry)
+    notes = []
+    primary = "model_aligned" if audit["model"].get("hit") else "strength_bias"
+    should_update = not audit["model"].get("hit")
+    weight = "medium" if should_update else "low"
+
+    h_xg, a_xg = h_proc.get("xg"), a_proc.get("xg")
+    if h_xg is not None and a_xg is not None:
+        xg_diff = h_xg - a_xg
+        score_diff = hs - as_
+        if abs(xg_diff) <= 0.35 and abs(score_diff) <= 1:
+            notes.append("xG与比分差距都较小，本场随机性占比较高。")
+        elif (xg_diff > 0.6 and score_diff <= 0) or (xg_diff < -0.6 and score_diff >= 0):
+            primary = "random_event"
+            should_update = False
+            weight = "low"
+            notes.append("过程数据与结果方向相反，更像效率/运气波动，不宜直接改写实力。")
+        elif (xg_diff > 0.6 and score_diff > 0) or (xg_diff < -0.6 and score_diff < 0):
+            primary = "strength_bias"
+            should_update = True
+            weight = "high" if audit["stage"]["type"] == "knockout" else "medium"
+            notes.append("xG优势与比分方向一致，具备实力修正信号。")
+
+    text = " ".join(str(x) for x in (entry or {}).get("tactical_notes", []))
+    if text and any(w in text for w in ("压制", "克制", "逼抢", "边路", "阵型")):
+        if primary not in {"random_event", "strength_bias"}:
+            primary = "matchup_bias"
+            should_update = True
+            weight = "medium"
+        notes.append("战术/对位证据明显，后续单场应作为对位修正因子。")
+
+    if flags:
+        primary = "random_event"
+        should_update = False
+        weight = "low"
+        notes.append("检测到点球/红牌/伤退/乌龙等特殊事件，应独立入账，降低实力回灌权重。")
+
+    if not notes:
+        notes.append("缺少足够过程数据，保持低权重渐进修正。")
+
+    labels = {
+        "model_aligned": "模型方向基本匹配",
+        "strength_bias": "实力判断偏差",
+        "matchup_bias": "对位判断偏差",
+        "random_event": "随机/特殊事件偏差",
+    }
+    return {
+        "primary_bias": primary,
+        "primary_bias_cn": labels[primary],
+        "should_update_strength": should_update,
+        "weight": weight,
+        "event_flags": flags,
+        "notes": notes,
+    }
+
+
+def _postmatch_review(audit: dict, fixture: dict, insights: dict | None) -> dict:
+    stage = audit["stage"]
+    home, away = audit["match"]["home"], audit["match"]["away"]
+    entry = _insight_entry(home, away, insights)
+    evidence = []
+    if entry:
+        for row in entry.get("prior_matches", [])[:4]:
+            bits = [zh(row.get("team"))]
+            if row.get("xg_for") is not None:
+                bits.append(f"xG {float(row['xg_for']):.1f}")
+            if row.get("shots_for") is not None:
+                bits.append(f"射门 {int(row['shots_for'])}")
+            if row.get("possession") is not None:
+                bits.append(f"控球 {float(row['possession']) * 100:.0f}%")
+            if len(bits) > 1:
+                evidence.append(" / ".join(bits))
+        evidence += [str(x).rstrip("。") + "。" for x in entry.get("tactical_notes", [])[:2]]
+        evidence += [str(x).rstrip("。") + "。" for x in entry.get("availability_notes", [])[:2]]
+        deep = entry.get("deep_analysis") or {}
+        if deep.get("text"):
+            evidence.append(str(deep["text"]).strip())
+    if not evidence:
+        evidence.append("暂无联网补全的xG、射门、控球或阵容数据，本场复盘仅基于比分、模型概率与市场基准。")
+
+    factors = []
+    m, mk = audit["model"], audit["market"]
+    if m.get("hit"):
+        factors.append("赛前模型方向与实际赛果一致，可小幅强化相关攻防假设。")
+    else:
+        factors.append("赛前模型方向与实际赛果偏离，应检查是否低估胜方真实强度或高估热门稳定性。")
+    if mk.get("enabled"):
+        if mk.get("hit") and not m.get("hit"):
+            factors.append("市场比模型更贴近实际结果，后续需关注临场赔率是否提前反映阵容或战术信息。")
+        elif m.get("hit") and not mk.get("hit"):
+            factors.append("模型比市场更贴近实际结果，可保留模型分歧信号但仍需复核风险来源。")
+    if stage["type"] == "knockout":
+        factors.append("淘汰赛样本少且平局会进入加时/点球，应单独记录点球风险、保守节奏与抗压能力。")
+    factors.append("红牌、伤退、点球大战等特殊事件应作为独立事件因子，不直接等同于常规实力变化。")
+
+    if stage["type"] == "knockout":
+        summary = (f"{stage['label']}复盘：{audit['match']['home_cn']} {audit['match']['score']} "
+                   f"{audit['match']['away_cn']}，实际为{audit['actual_cn']}；{audit['verdict']}")
+    else:
+        summary = audit["verdict"]
+    update_signal = _model_update_signal(audit, fixture, entry)
+    return {
+        "enabled": True,
+        "stage": stage["label"],
+        "data_as_of": entry.get("data_as_of") if entry else None,
+        "summary": summary,
+        "evidence": evidence,
+        "correction_factors": factors,
+        "model_update": update_signal,
+        "model_feedback": ("球队实力修正采用渐进式权重：攻防效率、防守稳定性、强强对话、淘汰赛抗压与点球风险"
+                           "分开记录，避免单场爆冷或极端事件造成过拟合。"),
+    }
+
+
+def match_audit(model, fixture, *, neutral=True, fixtures=None, snapshot=None, conn=None,
+                insights=None) -> dict:
     """单场赛后审计三方对比。fixture 需含 home_team/away_team/home_score/away_score/date_utc。"""
     home, away = fixture["home_team"], fixture["away_team"]
     hs, as_ = fixture.get("home_score"), fixture.get("away_score")
@@ -106,6 +278,7 @@ def match_audit(model, fixture, *, neutral=True, fixtures=None, snapshot=None, c
                   "match_number": fixture.get("match_number"),
                   "kickoff_utc": fixture.get("date_utc"),
                   "score": (f"{hs}-{as_}" if actual else None)},
+        "stage": _stage(fixture),
         "finished": actual is not None,
         "actual": actual,
         "actual_cn": (_OUTCOME_CN.get(actual) if actual else None),
@@ -131,6 +304,7 @@ def match_audit(model, fixture, *, neutral=True, fixtures=None, snapshot=None, c
         out["market"] = {"enabled": False,
                          "reason": "无赛前赔率快照（未在赛前拉取或缺 ODDS_API_KEY）"}
     out["verdict"] = _verdict(out)
+    out["postmatch_review"] = _postmatch_review(out, fixture, insights) if actual else {"enabled": False}
     return out
 
 
@@ -161,7 +335,7 @@ def _verdict(a: dict) -> str:
     return "；".join(parts) + "。"
 
 
-def audit_summary(model, fixtures, *, neutral=True, snapshots=None, conn=None) -> dict:
+def audit_summary(model, fixtures, *, neutral=True, snapshots=None, conn=None, insights=None) -> dict:
     """所有已完赛 predictable 比赛汇总：模型/市场 Brier/LogLoss/命中率 + 对比 + 逐场列表。
 
     snapshots: {match_number: snapshot_dict}（赛前锁定）；缺失的场次模型用事后复算。"""
@@ -172,7 +346,8 @@ def audit_summary(model, fixtures, *, neutral=True, snapshots=None, conn=None) -
     n_snapshot = 0
     for f in finished:
         a = match_audit(model, f, neutral=neutral, fixtures=fixtures,
-                        snapshot=snapshots.get(f.get("match_number")), conn=conn)
+                        snapshot=snapshots.get(f.get("match_number")), conn=conn,
+                        insights=insights)
         audits.append(a)
         model_recs.append({**a["model"]["probs"], "actual": a["actual"]})
         if a["model"]["source"] == "赛前锁定快照":
@@ -186,12 +361,23 @@ def audit_summary(model, fixtures, *, neutral=True, snapshots=None, conn=None) -
         "n_finished": len(finished),
         "n_with_snapshot": n_snapshot,
         "n_with_market": len(market_recs),
+        "scope": _scope(audits),
         "model_metrics": model_metrics,
         "market_metrics": market_metrics,
         "comparison": _compare(model_metrics, market_metrics),
         "matches": audits,
         "note": ("模型概率优先用赛前锁定快照；无快照的场次用当前模型事后复算"
                  "（模型已含该场赛果，存在数据泄漏，仅供参考）。市场仅作基准对比，不参与建模。"),
+    }
+
+
+def _scope(audits: list[dict]) -> dict:
+    group_stage = [a for a in audits if a.get("stage", {}).get("type") != "knockout"]
+    knockout = [a for a in audits if a.get("stage", {}).get("type") == "knockout"]
+    return {
+        "group_stage_finished": len(group_stage),
+        "knockout_finished": len(knockout),
+        "knockout_reviewed": sum(1 for a in knockout if a.get("postmatch_review", {}).get("enabled")),
     }
 
 

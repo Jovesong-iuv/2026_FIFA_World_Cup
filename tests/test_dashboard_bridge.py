@@ -29,8 +29,11 @@ class DashboardBridgePayloadTest(unittest.TestCase):
         self.assertIn("style_profiles", payload["prediction"])
         self.assertIn("win_margins", payload["prediction"])
         self.assertIn("match_analysis", payload)
+        self.assertIn("knockout", payload)
         self.assertIn("home_by_2_plus", payload["prediction"]["win_margins"])
         self.assertIn("attack_volume", payload["prediction"]["style_profiles"]["home"]["dimensions"])
+        self.assertIn("advance", payload["knockout"])
+        self.assertIn("ev_board", payload["knockout"])
 
 
 class _Model:

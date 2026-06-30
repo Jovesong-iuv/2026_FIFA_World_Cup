@@ -25,6 +25,11 @@ SNAP_DRAW = {"outcomes": {"home": 0.55, "draw": 0.25, "away": 0.20},
              "locked_at": "2026-06-20T10:00:00Z"}
 FIX_FUTURE = {"match_number": 3, "home_team": "Spain", "away_team": "Japan",
               "date_utc": "2026-07-01 19:00:00Z", "home_score": None, "away_score": None}
+FIX_KO = {"match_number": 80, "round_number": 5, "group_name": "", "home_team": "France",
+          "away_team": "Argentina", "date_utc": "2026-07-04 19:00:00Z",
+          "home_score": 1, "away_score": 1}
+SNAP_KO = {"outcomes": {"home": 0.42, "draw": 0.30, "away": 0.28},
+           "locked_at": "2026-07-04T10:00:00Z"}
 
 
 class ParseOutcomeTest(unittest.TestCase):
@@ -62,6 +67,61 @@ class MatchAuditSnapshotTest(unittest.TestCase):
         self.assertEqual(a["model"]["pick"], "home")     # 最看好主胜，实际平局
         self.assertFalse(a["model"]["hit"])
         self.assertIn("模型未中", a["verdict"])
+
+    def test_knockout_audit_includes_professional_postmatch_review(self):
+        insights = {"matches": {
+            "France__Argentina": {
+                "prior_matches": [
+                    {"team": "France", "xg_for": 1.7, "shots_for": 14, "source": "FBref"},
+                    {"team": "Argentina", "xg_for": 1.1, "shots_for": 9, "source": "FotMob"},
+                ],
+                "tactical_notes": ["法国边路推进效率更高。"],
+                "availability_notes": ["阿根廷主力后腰伤疑。"],
+                "deep_analysis": {"text": "法国压迫质量占优，但淘汰赛节奏更保守。"},
+                "data_as_of": "2026-07-05",
+            }
+        }}
+        a = A.match_audit(None, FIX_KO, snapshot=SNAP_KO, insights=insights)
+        review = a["postmatch_review"]
+        self.assertEqual(a["stage"]["type"], "knockout")
+        self.assertTrue(review["enabled"])
+        self.assertIn("淘汰赛", review["summary"])
+        self.assertIn("点球风险", "；".join(review["correction_factors"]))
+        self.assertIn("渐进式权重", review["model_feedback"])
+        self.assertTrue(any("xG" in item for item in review["evidence"]))
+
+    def test_random_knockout_events_are_not_model_update_signal(self):
+        insights = {"matches": {
+            "France__Argentina": {
+                "prior_matches": [
+                    {"team": "France", "xg_for": 1.2, "shots_for": 10, "source": "FBref"},
+                    {"team": "Argentina", "xg_for": 1.1, "shots_for": 9, "source": "FBref"},
+                ],
+                "deep_analysis": {"text": "比赛进入点球大战，且上半场出现红牌，常规实力判断噪声较大。"},
+            }
+        }}
+        a = A.match_audit(None, FIX_KO, snapshot=SNAP_KO, insights=insights)
+        fb = a["postmatch_review"]["model_update"]
+        self.assertEqual(fb["primary_bias"], "random_event")
+        self.assertFalse(fb["should_update_strength"])
+        self.assertEqual(fb["weight"], "low")
+
+    def test_process_data_can_mark_strength_update_signal(self):
+        fixture = {**FIX_KO, "home_score": 0, "away_score": 2}
+        insights = {"matches": {
+            "France__Argentina": {
+                "prior_matches": [
+                    {"team": "France", "xg_for": 0.7, "shots_for": 6, "source": "FBref"},
+                    {"team": "Argentina", "xg_for": 2.3, "shots_for": 17, "source": "FBref"},
+                ],
+                "tactical_notes": ["阿根廷高位逼抢持续压制法国出球。"],
+            }
+        }}
+        a = A.match_audit(None, fixture, snapshot=SNAP_KO, insights=insights)
+        fb = a["postmatch_review"]["model_update"]
+        self.assertEqual(fb["primary_bias"], "strength_bias")
+        self.assertTrue(fb["should_update_strength"])
+        self.assertIn(fb["weight"], ("medium", "high"))
 
 
 class MatchAuditMarketTest(unittest.TestCase):
@@ -107,6 +167,12 @@ class AuditSummaryTest(unittest.TestCase):
         self.assertEqual(s["n_with_market"], 2)
         self.assertTrue(s["comparison"]["enabled"])
         self.assertIn(s["comparison"]["log_loss"]["better"], ("模型", "市场", "持平"))
+
+    def test_summary_counts_knockout_reviews(self):
+        s = A.audit_summary(None, [FIX_HOME, FIX_KO], snapshots={1: SNAP_HOME, 80: SNAP_KO})
+        self.assertEqual(s["scope"]["group_stage_finished"], 1)
+        self.assertEqual(s["scope"]["knockout_finished"], 1)
+        self.assertEqual(s["scope"]["knockout_reviewed"], 1)
 
 
 class CompareTest(unittest.TestCase):

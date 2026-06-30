@@ -85,5 +85,15 @@ class CutoffTest(unittest.TestCase):
         self.assertEqual(len(adj._filter_after_cutoff(rows, "2026-06-15")), 0)   # 同日不计(防双计)
 
 
+class EventWeightTest(unittest.TestCase):
+    def test_knockout_weight_and_special_event_discount(self):
+        ko_weight, ko_notes = adj._event_weight({"round_number": 4})
+        noisy_weight, noisy_notes = adj._event_weight({"round_number": 4, "event_flags": ["penalty_shootout"]})
+        self.assertGreater(ko_weight, 1.0)
+        self.assertLess(noisy_weight, ko_weight)
+        self.assertIn("淘汰赛高权重", ko_notes)
+        self.assertIn("特殊事件降权", noisy_notes)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -32,6 +32,8 @@ HOSTS = {"Mexico", "Canada", "United States"}
 # 赛果增量参数
 K_WC = 70.0          # 世界杯赛果 Elo 修正力度(高于常规 60，强力纠偏)
 ETA = 0.06           # 攻防增量学习率(实际进球 vs 赛前期望)
+KNOCKOUT_WEIGHT = 1.35
+SPECIAL_EVENT_WEIGHT = 0.45
 
 # 有界(单队累计上限)
 ELO_CAP = 120.0
@@ -82,11 +84,26 @@ def _finished_wc_matches(cutoff: str) -> list[dict]:
     """fixtures 已完赛、日期严格晚于 cutoff 的世界杯比赛(防双重计数)。"""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT match_number, date_utc, home_team, away_team, home_score, away_score "
+            "SELECT match_number, round_number, date_utc, home_team, away_team, home_score, away_score "
             "FROM fixtures WHERE predictable=1 AND home_score IS NOT NULL "
             "AND away_score IS NOT NULL ORDER BY date_utc"
         ).fetchall()
     return _filter_after_cutoff([dict(r) for r in rows], cutoff)
+
+
+def _event_weight(m: dict) -> tuple[float, list[str]]:
+    weight, notes = 1.0, []
+    try:
+        if int(m.get("round_number") or 0) >= 4:
+            weight *= KNOCKOUT_WEIGHT
+            notes.append("淘汰赛高权重")
+    except (TypeError, ValueError):
+        pass
+    text = " ".join(str(x) for x in (m.get("event_flags") or m.get("notes") or []))
+    if any(w in text for w in ("点球", "红牌", "伤退", "乌龙", "penalty", "red_card", "injury_exit", "own_goal")):
+        weight *= SPECIAL_EVENT_WEIGHT
+        notes.append("特殊事件降权")
+    return weight, notes
 
 
 def compute_result_deltas(base_model: EnsembleModel, matches: list[dict]) -> dict:
@@ -103,6 +120,7 @@ def compute_result_deltas(base_model: EnsembleModel, matches: list[dict]) -> dic
             continue
         hs, as_ = int(m["home_score"]), int(m["away_score"])
         neutral = h not in HOSTS                       # 东道主保留主场优势
+        event_weight, weight_notes = _event_weight(m)
 
         # Elo 增量：实际胜负 vs 赛前期望胜率(主队视角 We=胜+半平)
         if elo is not None and getattr(elo, "ratings", None):
@@ -111,24 +129,26 @@ def compute_result_deltas(base_model: EnsembleModel, matches: list[dict]) -> dic
         else:
             we = 0.5
         w = 1.0 if hs > as_ else (0.5 if hs == as_ else 0.0)
-        d_elo = K_WC * _goal_mult(hs - as_) * (w - we)
+        d_elo = K_WC * event_weight * _goal_mult(hs - as_) * (w - we)
 
         # 攻防增量：实际进/失球 vs 赛前期望进球(符号与 DC 一致：defense 越大失球越多)
         lam, mu = base_model.expected_goals(h, a, neutral)
         eh, ea = ensure(h), ensure(a)
         eh["elo"] += d_elo
         ea["elo"] -= d_elo
-        eh["attack"] += ETA * (hs - lam)
-        eh["defense"] += ETA * (as_ - mu)
-        ea["attack"] += ETA * (as_ - mu)
-        ea["defense"] += ETA * (hs - lam)
+        eh["attack"] += ETA * event_weight * (hs - lam)
+        eh["defense"] += ETA * event_weight * (as_ - mu)
+        ea["attack"] += ETA * event_weight * (as_ - mu)
+        ea["defense"] += ETA * event_weight * (hs - lam)
 
         at = (m.get("date_utc") or "")[:10]
         detail = f"{h} {hs}-{as_} {a}"
         eh["sources"].append({"type": "result", "detail": detail,
-                              "delta_elo": round(d_elo, 1), "at": at})
+                              "delta_elo": round(d_elo, 1), "at": at,
+                              "weight": round(event_weight, 2), "weight_notes": weight_notes})
         ea["sources"].append({"type": "result", "detail": detail,
-                              "delta_elo": round(-d_elo, 1), "at": at})
+                              "delta_elo": round(-d_elo, 1), "at": at,
+                              "weight": round(event_weight, 2), "weight_notes": weight_notes})
     return adj
 
 

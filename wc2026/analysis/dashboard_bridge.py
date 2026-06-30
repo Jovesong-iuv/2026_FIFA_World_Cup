@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from wc2026.analysis import groups, intelligence, ranking, tournament, wc_history
+from wc2026.analysis import fatigue, groups, intelligence, knockout_analysis, ranking, tournament, wc_history
 from wc2026.analysis.team_style import style_profile
 from wc2026.config import settings
 from wc2026.data.flags import flag_emoji
@@ -185,6 +185,16 @@ def _market_for_dashboard(report: dict) -> dict:
     return out
 
 
+def _market_odds_for_knockout(odds_1x2: dict | None) -> dict:
+    if not odds_1x2:
+        return {}
+    return {
+        "home": odds_1x2.get("home"),
+        "draw": odds_1x2.get("draw"),
+        "away": odds_1x2.get("away"),
+    }
+
+
 def _championship_payload(model, n_sims: int = 2000) -> list[dict]:
     gd = groups.load_group_data(model)
     if not gd:
@@ -214,6 +224,11 @@ def build_dashboard_payload(model, home: str, away: str, neutral: bool = True, *
     p_home = _profile_for(model, home, report, fixture, standings, fixtures, profiles)
     p_away = _profile_for(model, away, report, fixture, standings, fixtures, profiles)
     pred_block = report["prediction"]
+    ko_fatigue = fatigue.match_fatigue(home, away, fixtures or [], fixture)
+    ko_payload = knockout_analysis.build_knockout_payload(
+        pred["matrix"], pred_block["expected_goals"]["home"], pred_block["expected_goals"]["away"],
+        home, away, market_odds=_market_odds_for_knockout(odds_1x2), fatigue=ko_fatigue,
+    )
     return {
         "match": {
             **report["match"],
@@ -237,6 +252,7 @@ def build_dashboard_payload(model, home: str, away: str, neutral: bool = True, *
                                "away": style_profile(away, profiles)},
         },
         "odds_validation": _market_for_dashboard(report),
+        "knockout": ko_payload,
         "summary": report["summary"],
         "match_analysis": report.get("match_analysis"),
         "risks": report["risks"],

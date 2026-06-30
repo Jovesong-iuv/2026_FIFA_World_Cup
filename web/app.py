@@ -1092,10 +1092,33 @@ th {{ color:var(--dim); font-size:12px; }}
 .strat-score-item .ss {{ font-weight:800; color:var(--text); }}
 .strat-score-item.reco .ss {{ color:var(--gold); }}
 .strat-score-item .sp {{ font-size:11px; color:var(--dim); }}
+.ko-hero {{ padding:20px; }}
+.ko-bar {{ display:flex; height:44px; border-radius:8px; overflow:hidden; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.04); }}
+.ko-home {{ background:linear-gradient(90deg,#e83f5f,#c93454); display:grid; place-items:center; font-weight:900; }}
+.ko-away {{ background:linear-gradient(90deg,#123a66,#0b2d52); display:grid; place-items:center; font-weight:900; }}
+.ko-formula {{ text-align:center; color:var(--muted); line-height:1.8; margin-top:12px; }}
+.ko-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; padding:0 20px 20px; }}
+.ko-metric-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }}
+.ko-metric {{ padding:14px; border-radius:12px; background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.07); text-align:center; }}
+.ko-metric b {{ display:block; font-size:22px; }}
+.ko-metric span {{ color:var(--dim); font-size:12px; }}
+.penalty-bar {{ display:flex; height:34px; border-radius:8px; overflow:hidden; margin-top:10px; }}
+.total-split {{ display:grid; grid-template-columns:1fr auto 1fr; gap:18px; align-items:center; padding:16px 20px 6px; text-align:center; }}
+.total-big {{ font-size:42px; font-weight:950; color:var(--green); }}
+.total-small {{ font-size:42px; font-weight:950; color:#f43f5e; }}
+.goal-bands {{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:8px 20px 20px; }}
+.ev-table tr.reco td {{ background:rgba(16,185,129,.10); }}
+.ev-table tr.avoid td {{ background:rgba(239,68,68,.10); }}
+.tag-reco {{ display:inline-block; padding:2px 8px; border-radius:999px; background:rgba(16,185,129,.2); color:#7bf7c5; font-size:11px; font-weight:900; margin-left:6px; }}
+.tag-avoid {{ display:inline-block; padding:2px 8px; border-radius:999px; background:rgba(239,68,68,.2); color:#ffaaa9; font-size:11px; font-weight:900; margin-left:6px; }}
+.fatigue-cards {{ display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:0 20px 16px; }}
+.fat-card {{ padding:16px; border-radius:14px; border:1px solid rgba(255,255,255,.07); background:rgba(255,255,255,.035); text-align:center; }}
+.fat-card b {{ display:block; font-size:18px; margin-bottom:6px; }}
+.trigger {{ display:inline-block; margin:5px 8px 5px 0; padding:7px 10px; border-radius:8px; background:rgba(245,158,11,.15); color:#ffd58a; font-size:12px; font-weight:800; }}
 @media(max-width:760px) {{
   .wrap {{ padding:12px; }} .team-card,.grid2,.prob-grid,.records,.summary {{ grid-template-columns:1fr; padding:16px; }}
   .vs {{ display:none; }} .score {{ font-size:44px; }} .info-row {{ grid-template-columns:92px 1fr; }}
-  .guide-list,.lambda-panel,.margin-grid {{ grid-template-columns:1fr; }}
+  .guide-list,.lambda-panel,.margin-grid,.ko-grid,.goal-bands,.fatigue-cards {{ grid-template-columns:1fr; }}
   .gsa-grid,.gsa-r32-grid {{ grid-template-columns:1fr; }}
   .strat-scores {{ grid-template-columns:1fr; }}
 }}
@@ -1216,6 +1239,38 @@ function renderOdds() {{
   }}).join('');
   return `<div class="card odds"><h2>赔率偏差颜色编码</h2><table><thead><tr><th>市场</th><th>赔率</th><th>模型概率</th><th>市场隐含</th><th>偏差</th></tr></thead><tbody>${{rows}}</tbody></table><p class="note">绿色=潜在价值，红色=市场高估，灰色=基本一致；赔率只做后验验证，不改写预测。</p></div>`;
 }}
+function renderKnockout() {{
+  const k = DATA.knockout || {{}};
+  if (!k.advance) return '';
+  const hName = DATA.match.home_cn, aName = DATA.match.away_cn;
+  const advH = k.advance.home || 0, advA = k.advance.away || 0;
+  const t25 = k.totals_90?.lines?.['2.5'] || {{}};
+  const t275 = k.totals_90?.lines?.['2.75'] || {{}};
+  const bands = k.totals_90?.goal_distribution || {{}};
+  const et = k.extra_time || {{}}, pen = k.penalties || {{}};
+  const fat = k.fatigue || {{}};
+  const fatBox = (team, d) => `<div class="fat-card"><b>${{team}}</b><div>休息${{d?.rest_days ?? '—'}}天 | 疲劳因子×1.00</div><div>ET λ=${{team===hName ? (et.lambda_home||0).toFixed(3) : (et.lambda_away||0).toFixed(3)}}</div></div>`;
+  const evRows = (k.ev_board || []).map(r => {{
+    const cls = r.recommendation === '推荐' ? 'reco' : (r.recommendation === '回避' ? 'avoid' : '');
+    const tag = r.recommendation === '推荐' ? '<span class="tag-reco">推荐</span>' : (r.recommendation === '回避' ? '<span class="tag-avoid">回避</span>' : '');
+    return `<tr class="${{cls}}"><td>${{esc(r.label)}} ${{tag}}</td><td>${{esc(r.probability_structure)}}</td><td>${{r.fair_odds || '—'}}</td><td>${{r.market_odds || '—'}}</td><td class="${{r.ev>=0?'dev-pos':'dev-neg'}}">${{r.ev>0?'+':''}}${{Number(r.ev||0).toFixed(3)}}</td></tr>`;
+  }}).join('');
+  const triggers = (k.condition_triggers || []).map(x => `<span class="trigger">${{esc(x)}}</span>`).join('');
+  return `<div class="card"><div class="title"><div><h2>淘汰赛晋级模型</h2><p>90分钟 + 加时 + 点球 · 晋级概率完整公式分解</p></div></div>
+    <div class="ko-hero"><div class="ko-bar"><div class="ko-home" style="width:${{Math.round(advH*100)}}%">${{hName}} ${{pct(advH)}}</div><div class="ko-away" style="width:${{Math.round(advA*100)}}%">${{aName}} ${{pct(advA)}}</div></div>
+    <div class="ko-formula">${{esc(k.advance.formula_home)}}<br>${{esc(k.advance.formula_home_values)}}<br>⚠ 晋级盘含加时+点球；多数盘口仅计90分钟。</div></div>
+    <div class="ko-grid">
+      <div class="lambda-box"><h3>大小球分析（仅90分钟）</h3><div class="total-split"><div><div class="total-small">${{pct(t25.over)}}</div><span>大球(&gt;2.5)</span></div><b>VS</b><div><div class="total-big">${{pct(t25.under)}}</div><span>小球(≤2.5)</span></div></div>
+        <div class="goal-bands">${{Object.entries(bands).map(([name,v])=>`<div class="ko-metric"><b>${{pct(v)}}</b><span>${{name}}</span></div>`).join('')}}</div>
+        <p class="note">亚洲2.75：大球全赢${{pct(t275.over_full)}} / 半赢${{pct(t275.over_half_win)}}；小球全赢${{pct(t275.under_full)}} / 半赢${{pct(t275.under_half_win)}}。</p></div>
+      <div class="lambda-box"><h3>加时赛 + 点球</h3><div class="ko-metric-grid"><div class="ko-metric"><b>${{pct(et.home)}}</b><span>${{hName}} ET胜</span></div><div class="ko-metric"><b>${{pct(et.draw)}}</b><span>进入点球</span></div><div class="ko-metric"><b>${{pct(et.away)}}</b><span>${{aName}} ET胜</span></div></div>
+        <div class="penalty-bar"><div class="ko-home" style="width:${{Math.round((pen.home||.5)*100)}}%">${{hName}} ${{pct(pen.home)}}</div><div class="ko-away" style="width:${{Math.round((pen.away||.5)*100)}}%">${{aName}} ${{pct(pen.away)}}</div></div><p class="note">${{esc(pen.factors || '')}}</p></div>
+    </div>
+    <div class="fatigue-cards">${{fatBox(hName, fat.home)}}${{fatBox(aName, fat.away)}}</div>
+    <div class="odds"><h2>投注EV排序（模型概率 vs 市场赔率）</h2><table class="ev-table"><thead><tr><th>下法</th><th>概率结构</th><th>公平赔率</th><th>市场赔率</th><th>EV</th></tr></thead><tbody>${{evRows}}</tbody></table><p class="note">市场赔率缺失时仅展示公平赔率，EV不作推荐依据。所有概率仅供模型分析，不构成下注建议。</p></div>
+    <div class="guide"><h3>分析总结</h3><p class="note">${{esc(k.analysis_summary || '')}}</p><div>${{triggers}}</div></div>
+  </div>`;
+}}
 function renderSummary() {{
   const s = DATA.summary || {{}}, risks = DATA.risks || [];
   const a = DATA.match_analysis || {{}};
@@ -1308,7 +1363,7 @@ function drawDonut() {{
   const c=$('#donut'); if(!c) return; const ctx=c.getContext('2d'), p=DATA.prediction, vals=[p.team_a_win_prob,p.draw_prob,p.team_b_win_prob], cols=['#3b82f6','#f59e0b','#ef4444'];
   let start=-Math.PI/2; vals.forEach((v,i)=>{{ ctx.beginPath(); ctx.moveTo(130,130); ctx.arc(130,130,112,start,start+v*Math.PI*2); ctx.closePath(); ctx.fillStyle=cols[i]; ctx.fill(); start+=v*Math.PI*2; }}); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(130,130,72,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over';
 }}
-$('#app').innerHTML = renderTeamComparison()+renderDimensions()+renderPrediction()+renderGroupStrategicAnalysis()+renderOdds()+renderSummary()+renderChampion();
+$('#app').innerHTML = renderTeamComparison()+renderDimensions()+renderPrediction()+renderGroupStrategicAnalysis()+renderKnockout()+renderOdds()+renderSummary()+renderChampion();
 drawRadar(); drawDonut();
 (function() {{
   var btn = document.getElementById('backTop');
@@ -1340,7 +1395,7 @@ drawRadar(); drawDonut();
 </body>
 </html>
 """
-    components.html(html, height=2500, scrolling=True)
+    components.html(html, height=3400, scrolling=True)
 
 
 def require_login() -> dict:
@@ -2763,17 +2818,23 @@ def render_audit(model) -> None:
     from wc2026.analysis import audit as _audit
     from wc2026.analysis.imminent import load_all_prematch_snapshots
     section_title("赛后复盘：模型 vs 市场 vs 实际")
-    # 淘汰赛阶段提示
-    if _detect_current_stage(load_knockout_fixtures()):
-        st.info("目前复盘数据仅覆盖小组赛，淘汰赛复盘将在比赛结束后自动添加。")
     if not fixtures:
         st.warning("暂无赛程数据（需先刷新 2026 赛程）。")
         return
     summary = _audit.audit_summary(model, fixtures, snapshots=load_all_prematch_snapshots())
     if summary["n_finished"] == 0:
-        st.info("还没有已完赛的小组赛可供复盘。开赛并回填比分后，"
+        st.info("还没有已完赛比赛可供复盘。开赛并回填比分后，"
                 "这里会逐场对比模型与市场的命中/偏差。")
         return
+
+    scope = summary.get("scope", {})
+    if scope.get("knockout_finished", 0):
+        st.info(f"复盘已覆盖小组赛 {scope.get('group_stage_finished', 0)} 场、"
+                f"淘汰赛 {scope.get('knockout_finished', 0)} 场；"
+                f"淘汰赛分场专业复盘 {scope.get('knockout_reviewed', 0)} 场。"
+                "每次一键全量刷新会自动联网补全已完赛淘汰赛的分场分析数据。")
+    elif _detect_current_stage(load_knockout_fixtures()):
+        st.info("淘汰赛进行中；已结束淘汰赛会在一键全量刷新后自动补全分场复盘。")
 
     mm = summary["model_metrics"]
     c1, c2, c3, c4 = st.columns(4)
@@ -2807,6 +2868,7 @@ def render_audit(model) -> None:
         m, mk = a["model"], a["market"]
         table.append({
             "比赛": f"{a['match']['home_cn']} vs {a['match']['away_cn']}",
+            "阶段": a.get("stage", {}).get("label", "—"),
             "比分": a["match"]["score"], "实际": a["actual_cn"],
             "模型预测": f"{m['pick_cn']} {m['probs'][m['pick']]:.0%}",
             "模型": "✅" if m["hit"] else "❌",
@@ -2820,6 +2882,16 @@ def render_audit(model) -> None:
         for a in summary["matches"]:
             st.markdown(f"- **{a['match']['home_cn']} {a['match']['score']} "
                         f"{a['match']['away_cn']}**：{a['verdict']}")
+            review = a.get("postmatch_review") or {}
+            if review.get("enabled") and a.get("stage", {}).get("type") == "knockout":
+                st.markdown(f"  - 赛后复盘：{review['summary']}")
+                st.markdown("  - 数据证据：" + "；".join(review.get("evidence", [])[:3]))
+                _mu = review.get("model_update") or {}
+                _update = "进入渐进修正" if _mu.get("should_update_strength") else "仅记录为证据，不直接改写实力"
+                st.markdown(f"  - 偏差归因：{_mu.get('primary_bias_cn', '—')} · 权重 {_mu.get('weight', '—')} · {_update}")
+                if _mu.get("notes"):
+                    st.markdown("  - 归因依据：" + "；".join(_mu["notes"][:2]))
+                st.markdown("  - 实力修正：" + review.get("model_feedback", ""))
     st.caption(summary["note"])
 
 
