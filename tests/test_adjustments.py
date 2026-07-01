@@ -20,9 +20,9 @@ def _model() -> EnsembleModel:
     return EnsembleModel(dc, elo)
 
 
-def _match(home, away, hs, as_, date="2026-06-20"):
+def _match(home, away, hs, as_, date="2026-06-20", **extra):
     return {"home_team": home, "away_team": away, "home_score": hs,
-            "away_score": as_, "date_utc": date}
+            "away_score": as_, "date_utc": date, **extra}
 
 
 class ResultDeltaTest(unittest.TestCase):
@@ -57,8 +57,31 @@ class ResultDeltaTest(unittest.TestCase):
         self.assertIn("top_scores", src["predicted"])
         self.assertIn("errors", src)
         self.assertGreater(src["errors"]["home_goal"], 0)
+        self.assertIn("delta_attack", src)
+        self.assertIn("delta_defense", src)
         self.assertIn("style", src)
         self.assertEqual(src["style"]["home"]["lean"], "未知")
+        self.assertIn("goal_calibration", src)
+        self.assertIn("process_weight", src)
+        self.assertIn("time_decay", src)
+
+    def test_process_data_reduces_update_when_score_contradicts_xg(self):
+        m = _model()
+        plain = adj.compute_result_deltas(m, [_match("Weak", "Strong", 1, 0)])
+        noisy = adj.compute_result_deltas(m, [_match("Weak", "Strong", 1, 0, home_xg=0.3, away_xg=2.4)])
+
+        self.assertLess(abs(noisy["Weak"]["elo"]), abs(plain["Weak"]["elo"]))
+        self.assertLess(noisy["Weak"]["sources"][0]["process_weight"], 1.0)
+
+    def test_recent_matches_get_more_weight_than_old_matches(self):
+        m = _model()
+        old = adj.compute_result_deltas(m, [_match("Weak", "Strong", 2, 0, "2026-06-01")],
+                                        as_of="2026-07-01")
+        recent = adj.compute_result_deltas(m, [_match("Weak", "Strong", 2, 0, "2026-06-30")],
+                                           as_of="2026-07-01")
+
+        self.assertGreater(abs(recent["Weak"]["elo"]), abs(old["Weak"]["elo"]))
+        self.assertGreater(recent["Weak"]["sources"][0]["time_decay"], old["Weak"]["sources"][0]["time_decay"])
 
 
 class MergeBoundsTest(unittest.TestCase):

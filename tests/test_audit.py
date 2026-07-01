@@ -68,6 +68,81 @@ class MatchAuditSnapshotTest(unittest.TestCase):
         self.assertFalse(a["model"]["hit"])
         self.assertIn("模型未中", a["verdict"])
 
+    def test_match_audit_exposes_postmatch_learning_adjustment(self):
+        adjustments = {
+            "France": {
+                "elo": 8.0,
+                "attack": 0.04,
+                "defense": -0.02,
+                "sources": [{
+                    "type": "result",
+                    "detail": "France 2-1 Senegal",
+                    "delta_elo": 8.0,
+                    "delta_attack": 0.04,
+                    "delta_defense": -0.02,
+                    "actual": {"home_score": 2, "away_score": 1, "total_goals": 3, "outcome": "home"},
+                    "predicted": {
+                        "home_xg": 1.4,
+                        "away_xg": 0.8,
+                        "total_goals": 2.2,
+                        "outcomes_1x2": {"home": 0.6, "draw": 0.22, "away": 0.18},
+                        "top_scores": [{"score": "1-0", "prob": 0.16}],
+                    },
+                    "errors": {"home_goal": 0.6, "away_goal": 0.2, "total_goals": 0.8,
+                               "outcome_missed": False},
+                    "style": {"home": {"lean": "进攻"}, "away": {"lean": "防守"}},
+                    "weight": 0.9,
+                    "event_weight": 1.0,
+                    "process_weight": 0.9,
+                    "time_decay": 1.0,
+                    "weight_notes": ["xG与比分未形成强冲突"],
+                    "goal_calibration": {"direction": "under_predicted_goals",
+                                         "label": "模型低估总进球"},
+                }],
+            },
+            "Senegal": {
+                "elo": -8.0,
+                "attack": 0.02,
+                "defense": 0.04,
+                "sources": [{
+                    "type": "result",
+                    "detail": "France 2-1 Senegal",
+                    "delta_elo": -8.0,
+                    "delta_attack": 0.02,
+                    "delta_defense": 0.04,
+                    "actual": {"home_score": 2, "away_score": 1, "total_goals": 3, "outcome": "home"},
+                    "predicted": {
+                        "home_xg": 1.4,
+                        "away_xg": 0.8,
+                        "total_goals": 2.2,
+                        "outcomes_1x2": {"home": 0.6, "draw": 0.22, "away": 0.18},
+                        "top_scores": [{"score": "1-0", "prob": 0.16}],
+                    },
+                    "errors": {"home_goal": 0.6, "away_goal": 0.2, "total_goals": 0.8,
+                               "outcome_missed": False},
+                    "style": {"home": {"lean": "进攻"}, "away": {"lean": "防守"}},
+                    "weight": 0.9,
+                    "event_weight": 1.0,
+                    "process_weight": 0.9,
+                    "time_decay": 1.0,
+                    "weight_notes": ["xG与比分未形成强冲突"],
+                    "goal_calibration": {"direction": "under_predicted_goals",
+                                         "label": "模型低估总进球"},
+                }],
+            },
+        }
+
+        a = A.match_audit(None, FIX_HOME, snapshot=SNAP_HOME, adjustments=adjustments)
+
+        self.assertTrue(a["learning"]["enabled"])
+        self.assertEqual(a["learning"]["actual"]["total_goals"], 3)
+        self.assertEqual(a["learning"]["predicted"]["total_goals"], 2.2)
+        self.assertEqual(a["learning"]["teams"]["home"]["delta_elo"], 8.0)
+        self.assertEqual(a["learning"]["teams"]["away"]["delta_defense"], 0.04)
+        self.assertEqual(a["learning"]["goal_calibration"]["label"], "模型低估总进球")
+        self.assertEqual(a["learning"]["weights"]["process"], 0.9)
+        self.assertIn("法国", a["learning"]["summary"])
+
     def test_knockout_audit_includes_professional_postmatch_review(self):
         insights = {"matches": {
             "France__Argentina": {

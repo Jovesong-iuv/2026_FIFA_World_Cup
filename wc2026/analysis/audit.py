@@ -255,8 +255,70 @@ def _postmatch_review(audit: dict, fixture: dict, insights: dict | None) -> dict
     }
 
 
+def _source_for_match(team_adj: dict, home: str, away: str, score: str) -> dict | None:
+    detail = f"{home} {score} {away}"
+    for src in (team_adj or {}).get("sources", []):
+        if src.get("type") == "result" and src.get("detail") == detail:
+            return src
+    return None
+
+
+def _learning_feedback(home: str, away: str, score: str | None, adjustments: dict | None) -> dict:
+    if not score:
+        return {"enabled": False, "reason": "未完赛或无比分"}
+    adjustments = adjustments if adjustments is not None else {}
+    home_src = _source_for_match(adjustments.get(home, {}), home, away, score)
+    away_src = _source_for_match(adjustments.get(away, {}), home, away, score)
+    src = home_src or away_src
+    if not src:
+        return {"enabled": False, "reason": "暂无该场赛后学习记录；请先执行一键全量刷新/重算赛中实力修正。"}
+
+    def team_delta(team: str, side: str, source: dict | None) -> dict:
+        return {
+            "team": team,
+            "team_cn": zh(team),
+            "side": side,
+            "delta_elo": (source or {}).get("delta_elo"),
+            "delta_attack": (source or {}).get("delta_attack"),
+            "delta_defense": (source or {}).get("delta_defense"),
+        }
+
+    actual = src.get("actual", {})
+    predicted = src.get("predicted", {})
+    errors = src.get("errors", {})
+    home_delta = team_delta(home, "home", home_src)
+    away_delta = team_delta(away, "away", away_src)
+    outcome_text = "命中" if not errors.get("outcome_missed") else "未命中"
+    pred_1x2 = predicted.get("outcomes_1x2") or {}
+    pred_pick = max(pred_1x2, key=pred_1x2.get) if pred_1x2 else None
+    summary = (
+        f"{zh(home)} vs {zh(away)}：模型赛前倾向"
+        f"{_OUTCOME_CN.get(pred_pick, '—')}，"
+        f"实际{_OUTCOME_CN.get(actual.get('outcome'), '—')}，赛果方向{outcome_text}；"
+        f"总进球预测 {predicted.get('total_goals', '—')}，实际 {actual.get('total_goals', '—')}，"
+        f"误差 {errors.get('total_goals', '—')}。"
+    )
+    return {
+        "enabled": True,
+        "summary": summary,
+        "actual": actual,
+        "predicted": predicted,
+        "errors": errors,
+        "goal_calibration": src.get("goal_calibration", {}),
+        "style": src.get("style", {}),
+        "weights": {
+            "final": src.get("weight"),
+            "event": src.get("event_weight"),
+            "process": src.get("process_weight"),
+            "time_decay": src.get("time_decay"),
+            "notes": src.get("weight_notes", []),
+        },
+        "teams": {"home": home_delta, "away": away_delta},
+    }
+
+
 def match_audit(model, fixture, *, neutral=True, fixtures=None, snapshot=None, conn=None,
-                insights=None) -> dict:
+                insights=None, adjustments=None) -> dict:
     """单场赛后审计三方对比。fixture 需含 home_team/away_team/home_score/away_score/date_utc。"""
     home, away = fixture["home_team"], fixture["away_team"]
     hs, as_ = fixture.get("home_score"), fixture.get("away_score")
@@ -305,6 +367,16 @@ def match_audit(model, fixture, *, neutral=True, fixtures=None, snapshot=None, c
                          "reason": "无赛前赔率快照（未在赛前拉取或缺 ODDS_API_KEY）"}
     out["verdict"] = _verdict(out)
     out["postmatch_review"] = _postmatch_review(out, fixture, insights) if actual else {"enabled": False}
+    if adjustments is None:
+        try:
+            from wc2026.analysis.adjustments import load_adjustments
+            adjustments = load_adjustments()
+        except Exception:
+            adjustments = {}
+    out["learning"] = _learning_feedback(home, away, out["match"]["score"], adjustments) if actual else {
+        "enabled": False,
+        "reason": "未完赛或无比分",
+    }
     return out
 
 

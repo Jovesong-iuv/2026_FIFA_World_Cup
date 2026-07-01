@@ -36,6 +36,8 @@ K_WC = 70.0          # 世界杯赛果 Elo 修正力度(高于常规 60，强力
 ETA = 0.06           # 攻防增量学习率(实际进球 vs 赛前期望)
 KNOCKOUT_WEIGHT = 1.35
 SPECIAL_EVENT_WEIGHT = 0.45
+TIME_DECAY_HALF_LIFE_DAYS = 21.0
+TIME_DECAY_FLOOR = 0.45
 
 # 有界(单队累计上限)
 ELO_CAP = 120.0
@@ -116,9 +118,71 @@ def _outcome(home_score: int, away_score: int) -> str:
     return "draw"
 
 
+def _date_utc(s: str | None) -> datetime | None:
+    if not s:
+        return None
+    text = str(s).strip().replace(" ", "T")
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        d = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def _time_decay(match_date: str | None, as_of: str | None) -> float:
+    mdt, adt = _date_utc(match_date), _date_utc(as_of)
+    if mdt is None or adt is None:
+        return 1.0
+    age_days = max(0.0, (adt - mdt).total_seconds() / 86400.0)
+    return round(max(TIME_DECAY_FLOOR, 0.5 ** (age_days / TIME_DECAY_HALF_LIFE_DAYS)), 4)
+
+
+def _process_weight(m: dict, hs: int, as_: int) -> tuple[float, list[str]]:
+    if m.get("home_xg") is None or m.get("away_xg") is None:
+        return 1.0, ["缺少xG过程数据，按比分低假设渐进修正"]
+    try:
+        home_xg, away_xg = float(m["home_xg"]), float(m["away_xg"])
+    except (TypeError, ValueError):
+        return 1.0, ["xG过程数据不可解析，按比分低假设渐进修正"]
+    xg_diff = home_xg - away_xg
+    score_diff = hs - as_
+    if abs(xg_diff) <= 0.35:
+        return 0.75, ["xG接近，降低单场比分噪声权重"]
+    if xg_diff * score_diff < 0:
+        return 0.45, ["比分方向与xG过程相反，显著降权避免过拟合"]
+    if abs(xg_diff) >= 0.8 and xg_diff * score_diff > 0:
+        return 1.15, ["比分方向与xG优势一致，小幅加权"]
+    return 1.0, ["xG与比分未形成强冲突，维持常规权重"]
+
+
+def _goal_calibration(hs: int, as_: int, lam: float, mu: float) -> dict:
+    actual_total = hs + as_
+    predicted_total = lam + mu
+    total_error = actual_total - predicted_total
+    if total_error >= 0.75:
+        direction = "under_predicted_goals"
+        label = "模型低估总进球"
+    elif total_error <= -0.75:
+        direction = "over_predicted_goals"
+        label = "模型高估总进球"
+    else:
+        direction = "total_goals_aligned"
+        label = "总进球基本校准"
+    return {
+        "direction": direction,
+        "label": label,
+        "actual_total": actual_total,
+        "predicted_total": round(predicted_total, 3),
+        "total_error": round(total_error, 3),
+    }
+
+
 def _postmatch_learning_source(base_model: EnsembleModel, m: dict, neutral: bool,
                                lam: float, mu: float, home_delta_elo: float,
                                away_delta_elo: float, event_weight: float,
+                               process_weight: float, time_decay: float,
                                weight_notes: list[str]) -> tuple[dict, dict]:
     h, a = m["home_team"], m["away_team"]
     hs, as_ = int(m["home_score"]), int(m["away_score"])
@@ -144,19 +208,33 @@ def _postmatch_learning_source(base_model: EnsembleModel, m: dict, neutral: bool
         },
         "style": {"home": style_profile(h, base_model.team_profiles),
                   "away": style_profile(a, base_model.team_profiles)},
-        "weight": round(event_weight, 2),
+        "weight": round(event_weight * process_weight * time_decay, 4),
+        "event_weight": round(event_weight, 4),
+        "process_weight": round(process_weight, 4),
+        "time_decay": round(time_decay, 4),
         "weight_notes": weight_notes,
+        "goal_calibration": _goal_calibration(hs, as_, lam, mu),
     }
     at = (m.get("date_utc") or "")[:10]
     detail = f"{h} {hs}-{as_} {a}"
+    final_weight = event_weight * process_weight * time_decay
+    home_delta_attack = ETA * final_weight * (hs - lam)
+    home_delta_defense = ETA * final_weight * (as_ - mu)
+    away_delta_attack = ETA * final_weight * (as_ - mu)
+    away_delta_defense = ETA * final_weight * (hs - lam)
     home_src = {"type": "result", "detail": detail, "delta_elo": round(home_delta_elo, 1),
+                "delta_attack": round(home_delta_attack, 4),
+                "delta_defense": round(home_delta_defense, 4),
                 "at": at, **common}
     away_src = {"type": "result", "detail": detail, "delta_elo": round(away_delta_elo, 1),
+                "delta_attack": round(away_delta_attack, 4),
+                "delta_defense": round(away_delta_defense, 4),
                 "at": at, **common}
     return home_src, away_src
 
 
-def compute_result_deltas(base_model: EnsembleModel, matches: list[dict]) -> dict:
+def compute_result_deltas(base_model: EnsembleModel, matches: list[dict], *,
+                          as_of: str | None = None) -> dict:
     """用赛前基线模型逐场算增量。返回 {team: {elo,attack,defense,sources}}。"""
     elo = getattr(base_model, "elo", None)
     adj: dict = {}
@@ -171,6 +249,12 @@ def compute_result_deltas(base_model: EnsembleModel, matches: list[dict]) -> dic
         hs, as_ = int(m["home_score"]), int(m["away_score"])
         neutral = h not in HOSTS                       # 东道主保留主场优势
         event_weight, weight_notes = _event_weight(m)
+        process_weight, process_notes = _process_weight(m, hs, as_)
+        decay = _time_decay(m.get("date_utc"), as_of)
+        final_weight = event_weight * process_weight * decay
+        weight_notes = weight_notes + process_notes
+        if decay < 1.0:
+            weight_notes.append("旧比赛按时间衰减降权")
 
         # Elo 增量：实际胜负 vs 赛前期望胜率(主队视角 We=胜+半平)
         if elo is not None and getattr(elo, "ratings", None):
@@ -179,20 +263,21 @@ def compute_result_deltas(base_model: EnsembleModel, matches: list[dict]) -> dic
         else:
             we = 0.5
         w = 1.0 if hs > as_ else (0.5 if hs == as_ else 0.0)
-        d_elo = K_WC * event_weight * _goal_mult(hs - as_) * (w - we)
+        d_elo = K_WC * final_weight * _goal_mult(hs - as_) * (w - we)
 
         # 攻防增量：实际进/失球 vs 赛前期望进球(符号与 DC 一致：defense 越大失球越多)
         lam, mu = base_model.expected_goals(h, a, neutral)
         eh, ea = ensure(h), ensure(a)
         eh["elo"] += d_elo
         ea["elo"] -= d_elo
-        eh["attack"] += ETA * event_weight * (hs - lam)
-        eh["defense"] += ETA * event_weight * (as_ - mu)
-        ea["attack"] += ETA * event_weight * (as_ - mu)
-        ea["defense"] += ETA * event_weight * (hs - lam)
+        eh["attack"] += ETA * final_weight * (hs - lam)
+        eh["defense"] += ETA * final_weight * (as_ - mu)
+        ea["attack"] += ETA * final_weight * (as_ - mu)
+        ea["defense"] += ETA * final_weight * (hs - lam)
 
         home_src, away_src = _postmatch_learning_source(
-            base_model, m, neutral, lam, mu, d_elo, -d_elo, event_weight, weight_notes)
+            base_model, m, neutral, lam, mu, d_elo, -d_elo,
+            event_weight, process_weight, decay, weight_notes)
         eh["sources"].append(home_src)
         ea["sources"].append(away_src)
     return adj

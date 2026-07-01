@@ -2874,6 +2874,7 @@ def render_audit(model) -> None:
             "模型": "✅" if m["hit"] else "❌",
             "市场预测": (mk["pick_cn"] if mk.get("enabled") else "—"),
             "市场": (("✅" if mk["hit"] else "❌") if mk.get("enabled") else "—"),
+            "学习修正": "已入账" if (a.get("learning") or {}).get("enabled") else "待重算",
             "数据": "锁定" if m["source"] == "赛前锁定快照" else "复算",
         })
     st.dataframe(pd.DataFrame(table), hide_index=True, width="stretch")
@@ -2883,6 +2884,46 @@ def render_audit(model) -> None:
             st.markdown(f"- **{a['match']['home_cn']} {a['match']['score']} "
                         f"{a['match']['away_cn']}**：{a['verdict']}")
             review = a.get("postmatch_review") or {}
+            learning = a.get("learning") or {}
+            if learning.get("enabled"):
+                pred = learning.get("predicted", {})
+                err = learning.get("errors", {})
+                teams = learning.get("teams", {})
+                style = learning.get("style", {})
+                weights = learning.get("weights", {})
+                goal_cal = learning.get("goal_calibration", {})
+                st.markdown(f"  - 赛后学习：{learning['summary']}")
+                st.markdown(
+                    "  - 预测/实际："
+                    f"预测进球 {pred.get('home_xg', '—')} - {pred.get('away_xg', '—')} "
+                    f"(总 {pred.get('total_goals', '—')})；"
+                    f"真实比分 {a['match']['score']}；"
+                    f"主队进球误差 {err.get('home_goal', '—')}，"
+                    f"客队进球误差 {err.get('away_goal', '—')}。"
+                )
+                st.markdown(
+                    "  - 校准权重："
+                    f"{goal_cal.get('label', '总进球校准未知')}；"
+                    f"事件 {weights.get('event', '—')} × 过程 {weights.get('process', '—')} × "
+                    f"时间 {weights.get('time_decay', '—')} = 最终 {weights.get('final', '—')}。"
+                )
+                if weights.get("notes"):
+                    st.markdown("  - 权重依据：" + "；".join(weights["notes"][:3]))
+                hd, ad = teams.get("home", {}), teams.get("away", {})
+                st.markdown(
+                    "  - 队伍修正："
+                    f"{hd.get('team_cn', '主队')} Elo {hd.get('delta_elo', '—')}，"
+                    f"进攻 {hd.get('delta_attack', '—')}，防守 {hd.get('delta_defense', '—')}；"
+                    f"{ad.get('team_cn', '客队')} Elo {ad.get('delta_elo', '—')}，"
+                    f"进攻 {ad.get('delta_attack', '—')}，防守 {ad.get('delta_defense', '—')}。"
+                )
+                hp, ap = style.get("home", {}), style.get("away", {})
+                st.markdown(
+                    f"  - 风格上下文：{a['match']['home_cn']} {hp.get('lean', '—')} vs "
+                    f"{a['match']['away_cn']} {ap.get('lean', '—')}，用于解释该场误差属于实力、对位还是随机事件。"
+                )
+            else:
+                st.markdown(f"  - 赛后学习：{learning.get('reason', '暂无学习记录')}")
             if review.get("enabled") and a.get("stage", {}).get("type") == "knockout":
                 st.markdown(f"  - 赛后复盘：{review['summary']}")
                 st.markdown("  - 数据证据：" + "；".join(review.get("evidence", [])[:3]))
