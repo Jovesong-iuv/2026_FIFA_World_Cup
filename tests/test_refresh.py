@@ -1,11 +1,52 @@
 import unittest
+import sqlite3
+from tempfile import TemporaryDirectory
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from wc2026.refresh import resilient_refresh
+from wc2026.refresh import _live_score_candidates, refresh_knockout_postmatch_insights, resilient_refresh
 
 
 class ResilientRefreshTest(unittest.TestCase):
+    def test_live_score_candidates_skip_recent_future_and_stale_matches(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            "CREATE TABLE fixtures (match_number INTEGER PRIMARY KEY, predictable INTEGER, "
+            "date_utc TEXT, home_team TEXT, away_team TEXT, home_score INTEGER, away_score INTEGER)"
+        )
+        conn.executemany(
+            "INSERT INTO fixtures VALUES (?, 1, ?, ?, ?, NULL, NULL)",
+            [
+                (1, "2026-07-01 08:00:00Z", "A", "B"),
+                (2, "2026-07-01 10:30:00Z", "C", "D"),
+                (3, "2026-07-01 13:00:00Z", "E", "F"),
+                (4, "2026-06-20 08:00:00Z", "G", "H"),
+            ],
+        )
+
+        rows = _live_score_candidates(conn, limit=10, now_utc="2026-07-01 12:00:00Z",
+                                      settle_hours=2, lookback_days=7)
+
+        self.assertEqual([r["match_number"] for r in rows], [1])
+
+    def test_live_score_candidates_respect_limit(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            "CREATE TABLE fixtures (match_number INTEGER PRIMARY KEY, predictable INTEGER, "
+            "date_utc TEXT, home_team TEXT, away_team TEXT, home_score INTEGER, away_score INTEGER)"
+        )
+        conn.executemany(
+            "INSERT INTO fixtures VALUES (?, 1, '2026-07-01 01:00:00Z', ?, ?, NULL, NULL)",
+            [(i, f"H{i}", f"A{i}") for i in range(1, 6)],
+        )
+
+        rows = _live_score_candidates(conn, limit=3, now_utc="2026-07-01 12:00:00Z", settle_hours=2)
+
+        self.assertEqual([r["match_number"] for r in rows], [1, 2, 3])
+
     def test_refresh_continues_after_network_steps_fail(self):
         calls = []
 
@@ -77,6 +118,26 @@ class ResilientRefreshTest(unittest.TestCase):
         step = [s for s in result["steps"] if s["name"] == "knockout_review"][0]
         self.assertTrue(step["ok"])
         self.assertEqual(step["result"]["matches"], 2)
+
+    def test_knockout_review_skips_cached_matches(self):
+        with TemporaryDirectory() as d:
+            path = Path(d) / "match_insights.json"
+            path.write_text(
+                '{"matches":{"A::B":{"data_as_of":"2026-07-01"},"C::D":{}}}',
+                encoding="utf-8",
+            )
+
+            with patch("wc2026.refresh._finished_knockout_fixtures", return_value=[
+                    {"match_number": 1, "home_team": "A", "away_team": "B"},
+                    {"match_number": 2, "home_team": "C", "away_team": "D"},
+            ]), patch("wc2026.refresh.refresh_match_insight",
+                      return_value={"ok": True}) as refresh:
+                result = refresh_knockout_postmatch_insights(path=path)
+
+        self.assertEqual(result["matches"], 2)
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(result["processed"], 1)
+        refresh.assert_called_once_with("C", "D", path=path)
 
 
 if __name__ == "__main__":

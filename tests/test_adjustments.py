@@ -44,6 +44,22 @@ class ResultDeltaTest(unittest.TestCase):
         d = adj.compute_result_deltas(_model(), [_match("Mid", "Strong", 1, 1)])
         self.assertAlmostEqual(d["Mid"]["elo"], -d["Strong"]["elo"], places=9)
 
+    def test_result_source_records_prediction_vs_actual_and_style(self):
+        d = adj.compute_result_deltas(_model(), [_match("Weak", "Strong", 3, 0)])
+        src = d["Weak"]["sources"][0]
+
+        self.assertEqual(src["type"], "result")
+        self.assertEqual(src["actual"], {"home_score": 3, "away_score": 0, "total_goals": 3, "outcome": "home"})
+        self.assertIn("predicted", src)
+        self.assertIn("home_xg", src["predicted"])
+        self.assertIn("away_xg", src["predicted"])
+        self.assertIn("outcomes_1x2", src["predicted"])
+        self.assertIn("top_scores", src["predicted"])
+        self.assertIn("errors", src)
+        self.assertGreater(src["errors"]["home_goal"], 0)
+        self.assertIn("style", src)
+        self.assertEqual(src["style"]["home"]["lean"], "未知")
+
 
 class MergeBoundsTest(unittest.TestCase):
     def test_bounds_clip(self):

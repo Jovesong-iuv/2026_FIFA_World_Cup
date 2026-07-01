@@ -19,8 +19,10 @@ import copy
 import json
 from datetime import datetime, timezone
 
+from wc2026.analysis.team_style import style_profile
 from wc2026.config import settings
 from wc2026.data.db import get_conn
+from wc2026.markets.derive import correct_score_top, outcomes_1x2
 from wc2026.models.elo import _goal_mult
 from wc2026.models.predictor import EnsembleModel
 
@@ -106,6 +108,54 @@ def _event_weight(m: dict) -> tuple[float, list[str]]:
     return weight, notes
 
 
+def _outcome(home_score: int, away_score: int) -> str:
+    if home_score > away_score:
+        return "home"
+    if home_score < away_score:
+        return "away"
+    return "draw"
+
+
+def _postmatch_learning_source(base_model: EnsembleModel, m: dict, neutral: bool,
+                               lam: float, mu: float, home_delta_elo: float,
+                               away_delta_elo: float, event_weight: float,
+                               weight_notes: list[str]) -> tuple[dict, dict]:
+    h, a = m["home_team"], m["away_team"]
+    hs, as_ = int(m["home_score"]), int(m["away_score"])
+    mat = base_model.score_matrix(h, a, neutral)
+    actual = {"home_score": hs, "away_score": as_, "total_goals": hs + as_,
+              "outcome": _outcome(hs, as_)}
+    predicted = {
+        "home_xg": round(float(lam), 3),
+        "away_xg": round(float(mu), 3),
+        "total_goals": round(float(lam + mu), 3),
+        "outcomes_1x2": {k: round(v, 4) for k, v in outcomes_1x2(mat).items()},
+        "top_scores": correct_score_top(mat, n=5),
+    }
+    common = {
+        "actual": actual,
+        "predicted": predicted,
+        "errors": {
+            "home_goal": round(hs - lam, 3),
+            "away_goal": round(as_ - mu, 3),
+            "total_goals": round((hs + as_) - (lam + mu), 3),
+            "outcome_missed": actual["outcome"] != max(predicted["outcomes_1x2"],
+                                                       key=predicted["outcomes_1x2"].get),
+        },
+        "style": {"home": style_profile(h, base_model.team_profiles),
+                  "away": style_profile(a, base_model.team_profiles)},
+        "weight": round(event_weight, 2),
+        "weight_notes": weight_notes,
+    }
+    at = (m.get("date_utc") or "")[:10]
+    detail = f"{h} {hs}-{as_} {a}"
+    home_src = {"type": "result", "detail": detail, "delta_elo": round(home_delta_elo, 1),
+                "at": at, **common}
+    away_src = {"type": "result", "detail": detail, "delta_elo": round(away_delta_elo, 1),
+                "at": at, **common}
+    return home_src, away_src
+
+
 def compute_result_deltas(base_model: EnsembleModel, matches: list[dict]) -> dict:
     """用赛前基线模型逐场算增量。返回 {team: {elo,attack,defense,sources}}。"""
     elo = getattr(base_model, "elo", None)
@@ -141,14 +191,10 @@ def compute_result_deltas(base_model: EnsembleModel, matches: list[dict]) -> dic
         ea["attack"] += ETA * event_weight * (as_ - mu)
         ea["defense"] += ETA * event_weight * (hs - lam)
 
-        at = (m.get("date_utc") or "")[:10]
-        detail = f"{h} {hs}-{as_} {a}"
-        eh["sources"].append({"type": "result", "detail": detail,
-                              "delta_elo": round(d_elo, 1), "at": at,
-                              "weight": round(event_weight, 2), "weight_notes": weight_notes})
-        ea["sources"].append({"type": "result", "detail": detail,
-                              "delta_elo": round(-d_elo, 1), "at": at,
-                              "weight": round(event_weight, 2), "weight_notes": weight_notes})
+        home_src, away_src = _postmatch_learning_source(
+            base_model, m, neutral, lam, mu, d_elo, -d_elo, event_weight, weight_notes)
+        eh["sources"].append(home_src)
+        ea["sources"].append(away_src)
     return adj
 
 

@@ -5,7 +5,7 @@ import time
 from collections.abc import Callable
 
 from wc2026.analysis.adjustments import recompute
-from wc2026.analysis.match_insights import refresh_match_insight
+from wc2026.analysis.match_insights import INSIGHTS_PATH, load_insights, refresh_match_insight
 from wc2026.data.db import init_db
 from wc2026.data.db import get_conn
 from wc2026.data.ingest import ingest_international_results
@@ -13,6 +13,12 @@ from wc2026.data.results import backfill_fixture_scores, export_results_json
 from wc2026.data.sources.fixtures_2026 import fetch_and_store_fixtures
 from wc2026.data.sources.live_results import search_match_result
 from wc2026.models.predictor import get_model, train_and_save
+
+LIVE_SCORE_SETTLE_HOURS = 3
+LIVE_SCORE_LIMIT = 24
+LIVE_SCORE_TIMEOUT = 6
+LIVE_SCORE_TIME_BUDGET = 90
+LIVE_SCORE_LOOKBACK_DAYS = 7
 
 
 def _run_step(name: str, label: str, fn: Callable, *, critical: bool = False) -> dict:
@@ -36,13 +42,22 @@ def _finished_knockout_fixtures() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def refresh_knockout_postmatch_insights() -> dict:
+def _has_match_insight(home: str, away: str, *, path=INSIGHTS_PATH) -> bool:
+    matches = load_insights(path).get("matches", {})
+    entry = matches.get(f"{home}::{away}") or matches.get(f"{away}::{home}") or {}
+    return bool(entry.get("data_as_of"))
+
+
+def refresh_knockout_postmatch_insights(*, path=INSIGHTS_PATH, force: bool = False) -> dict:
     """联网补全已完赛淘汰赛分场数据，供赛后复盘和后续实力修正解释使用。"""
     rows = _finished_knockout_fixtures()
-    ok, failed, errors = 0, 0, []
+    ok, failed, skipped, errors = 0, 0, 0, []
     for r in rows:
+        if not force and _has_match_insight(r["home_team"], r["away_team"], path=path):
+            skipped += 1
+            continue
         try:
-            res = refresh_match_insight(r["home_team"], r["away_team"])
+            res = refresh_match_insight(r["home_team"], r["away_team"], path=path)
             if res.get("ok"):
                 ok += 1
             else:
@@ -51,23 +66,44 @@ def refresh_knockout_postmatch_insights() -> dict:
         except Exception as exc:
             failed += 1
             errors.append({"match_number": r["match_number"], "errors": [str(exc)]})
-    return {"matches": len(rows), "ok": ok, "failed": failed, "errors": errors[:5]}
+    return {"matches": len(rows), "processed": ok + failed, "skipped": skipped,
+            "ok": ok, "failed": failed, "errors": errors[:5]}
 
 
-def refresh_live_fixture_scores(limit: int = 104) -> dict:
+def _live_score_candidates(conn, *, limit: int, now_utc: str | None = None,
+                           settle_hours: int = LIVE_SCORE_SETTLE_HOURS,
+                           lookback_days: int = LIVE_SCORE_LOOKBACK_DAYS) -> list[dict]:
+    now_expr = "?" if now_utc else "'now'"
+    now_params = [now_utc] if now_utc else []
+    params = now_params + [f"-{settle_hours} hours"] + now_params + [f"-{lookback_days} days", limit]
+    rows = conn.execute(
+        "SELECT match_number, home_team, away_team FROM fixtures "
+        "WHERE predictable=1 AND home_score IS NULL AND away_score IS NULL "
+        f"AND datetime(date_utc) <= datetime({now_expr}, ?) "
+        f"AND datetime(date_utc) >= datetime({now_expr}, ?) "
+        "ORDER BY match_number LIMIT ?",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def refresh_live_fixture_scores(limit: int = LIVE_SCORE_LIMIT, *,
+                                timeout: float = LIVE_SCORE_TIMEOUT,
+                                time_budget: float = LIVE_SCORE_TIME_BUDGET) -> dict:
     """从 ESPN/Yahoo/FIFA 等公开搜索结果尽量补全 fixtures 已完赛比分。"""
+    started = time.monotonic()
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT match_number, home_team, away_team FROM fixtures "
-            "WHERE predictable=1 AND home_score IS NULL AND away_score IS NULL "
-            "ORDER BY match_number LIMIT ?",
-            (limit,),
-        ).fetchall()
-        rows = [dict(r) for r in rows]
+        rows = _live_score_candidates(conn, limit=limit)
         updated, errors = 0, []
+        checked = 0
+        stopped = None
         for r in rows:
+            if time.monotonic() - started >= time_budget:
+                stopped = f"达到联网补分时间预算 {time_budget}s"
+                break
+            checked += 1
             try:
-                found = search_match_result(r["home_team"], r["away_team"])
+                found = search_match_result(r["home_team"], r["away_team"], timeout=timeout)
             except Exception as exc:
                 errors.append({"match_number": r["match_number"], "error": str(exc)})
                 continue
@@ -78,7 +114,8 @@ def refresh_live_fixture_scores(limit: int = 104) -> dict:
                 (found["home_score"], found["away_score"], r["match_number"]),
             )
             updated += 1
-    return {"checked": len(rows), "updated": updated, "errors": errors[:5],
+    return {"checked": checked, "candidates": len(rows), "updated": updated,
+            "skipped_recent_or_future": True, "stopped": stopped, "errors": errors[:5],
             "sources": ["ESPN/Yahoo/FIFA公开页搜索", "中文新闻搜索后备"]}
 
 
