@@ -3018,6 +3018,192 @@ def render_global_chat(model) -> None:
     st.caption("AI 基于赛事统筹数据作答（夺冠模拟/各组形势/模型校准）；概率有误差、仅供参考、非投注建议。")
 
 
+def _rec_stage_label(f: dict) -> str:
+    rn = f.get("round_number") or 0
+    return _STAGE_LABELS.get(rn, f"第{rn}轮") if rn >= 4 else (f.get("group_name") or "小组赛")
+
+
+def _rec_fixture_label(f: dict) -> str:
+    from wc2026.analysis import schedule as _sch
+    bj = _sch.beijing(f.get("date_utc") or "")
+    return f"M{f.get('match_number')} · {bj['full']} · {_rec_stage_label(f)} · {zh(f['home_team'])} vs {zh(f['away_team'])}"
+
+
+def _rec_dates(fixtures: list[dict]) -> list[str]:
+    from wc2026.analysis import schedule as _sch
+    return sorted({_sch.beijing(f.get("date_utc") or "")["date"] for f in fixtures if f.get("date_utc")})
+
+
+def _rec_context(model, fixture: dict, fixtures: list[dict]) -> tuple:
+    from wc2026.analysis import recommendations as rec_mod
+    from wc2026.analysis import dimensions as dims_mod
+    from wc2026.analysis.team_style import style_profile
+
+    h, a = fixture["home_team"], fixture["away_team"]
+    neutral = h not in HOSTS
+    mat = model.score_matrix(h, a, neutral)
+    lam, mu = model.expected_goals(h, a, neutral)
+    prof = dims_mod.nine_dimension_profile(model, h, a, neutral=neutral)
+    style_h, style_a = style_profile(h), style_profile(a)
+    team_context = {
+        "home_score": prof["score_home"],
+        "away_score": prof["score_away"],
+        "dimension_note": prof["explanation"],
+        "home_style": f"{style_h.get('formation')} · {style_h.get('lean')}",
+        "away_style": f"{style_a.get('formation')} · {style_a.get('lean')}",
+        "lambda_home": round(lam, 3),
+        "lambda_away": round(mu, 3),
+        "stage": _rec_stage_label(fixture),
+    }
+    recs = rec_mod.list_recommendations(match_number=fixture.get("match_number"))
+    consensus = rec_mod.consensus_report(
+        h, a, recs, model_matrix=mat, lambda_home=lam, lambda_away=mu,
+        team_context=team_context,
+    )
+    return recs, consensus
+
+
+def _rec_table(rows: list[dict], title: str, label_key: str) -> None:
+    if not rows:
+        st.caption(f"{title}：暂无推荐。")
+        return
+    st.markdown(f"**{title}**")
+    st.dataframe(pd.DataFrame([{
+        "推荐": r[label_key],
+        "综合概率": f"{r['probability']:.1%}",
+        "模型概率": f"{r.get('model_prob', 0):.1%}" if r.get("model_prob") is not None else "—",
+        "外部共识": f"{r.get('external_strength', 0):.2f}",
+    } for r in rows]), hide_index=True, width="stretch")
+
+
+def render_recommendation_compare(model, fixtures: list[dict]) -> None:
+    from wc2026.analysis import schedule as _sch
+    from wc2026.analysis import recommendations as rec_mod
+    from wc2026.data.db import init_db
+
+    render_hero("推荐对比", "把 iuv、小红书、朋友和模型比分放在一块，统一做比分、进球数与半全场综合分析。", "CONSENSUS DESK")
+    init_db()
+    rows = [f for f in fixtures if f.get("home_team") in model.teams and f.get("away_team") in model.teams]
+    if not rows:
+        st.warning("暂无可用赛程。")
+        return
+
+    dates = _rec_dates(rows)
+    focus = st.session_state.pop("rec_focus_match_number", None)
+    today = datetime.now().strftime("%Y-%m-%d")
+    focus_fixture = next((f for f in rows if f.get("match_number") == focus), None)
+    default_date = (_sch.beijing(focus_fixture.get("date_utc"))["date"]
+                    if focus_fixture else (today if today in dates else dates[0]))
+    date_labels = {}
+    for f in rows:
+        bj = _sch.beijing(f.get("date_utc") or "")
+        date_labels.setdefault(bj["date"], f"{bj['date']} · {bj['full'].rsplit(' ', 1)[0]}")
+    dcol, mcol = st.columns([1, 2.2])
+    date = dcol.selectbox("比赛日期（北京时间）", dates, index=dates.index(default_date),
+                          format_func=lambda d: date_labels.get(d, d))
+    day_rows = [f for f in rows if _sch.beijing(f.get("date_utc") or "")["date"] == date]
+    if not day_rows:
+        st.info("这一天没有可用比赛。")
+        return
+
+    st.markdown("**当天赛程表头**")
+    header = []
+    for f in day_rows:
+        rec_count = len(rec_mod.list_recommendations(match_number=f.get("match_number")))
+        bj = _sch.beijing(f.get("date_utc") or "")
+        header.append({
+            "场次": f"M{f.get('match_number')}",
+            "时间": bj["time"],
+            "阶段": _rec_stage_label(f),
+            "比赛": f"{zh(f['home_team'])} vs {zh(f['away_team'])}",
+            "推荐来源": rec_count,
+        })
+    st.dataframe(pd.DataFrame(header), hide_index=True, width="stretch")
+
+    match_index = 0
+    if focus_fixture in day_rows:
+        match_index = day_rows.index(focus_fixture)
+    selected = mcol.selectbox("选择比赛", day_rows, index=match_index, format_func=_rec_fixture_label)
+    home_team, away_team = selected["home_team"], selected["away_team"]
+    st.markdown(f"### {zh(home_team)} vs {zh(away_team)}")
+    st.caption(f"{_rec_stage_label(selected)} · {_sch.beijing(selected.get('date_utc') or '')['full']} · M{selected.get('match_number')}")
+
+    recs, consensus = _rec_context(model, selected, fixtures)
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("来源数", len(recs))
+    k2.metric(f"{zh(home_team)}强弱分", f"{consensus['team_context'].get('home_score', 0):.1f}")
+    k3.metric(f"{zh(away_team)}强弱分", f"{consensus['team_context'].get('away_score', 0):.1f}")
+    k4.metric("模型λ", f"{consensus['team_context'].get('lambda_home', 0):.2f}:{consensus['team_context'].get('lambda_away', 0):.2f}")
+    st.caption(consensus["team_context"].get("dimension_note", ""))
+
+    with st.form(f"rec_form:{selected.get('match_number')}"):
+        st.markdown("**新增推荐来源**")
+        c1, c2, c3 = st.columns([1.1, 2.2, 1])
+        source = c1.text_input("名字 / 来源", placeholder="iuv / 小红书 / 朋友A")
+        scores = c2.text_input("比分预测", placeholder="0-0 1-0 1-1 2-1")
+        confidence = c3.selectbox("置信度", ["中", "高", "低"])
+        g1, g2 = st.columns(2)
+        goal_picks = g1.text_input("进球数预测", placeholder="0-1球, 1-2球, 小2.5")
+        half_full = g2.text_input("半全场预测", placeholder="平平 平胜 平负")
+        note = st.text_area("备注", placeholder="可粘贴推荐理由、盘口、来源链接或自己的判断", height=70)
+        submitted = st.form_submit_button("保存推荐", disabled=not is_owner())
+        if submitted:
+            if not source.strip():
+                st.error("请填写来源名。")
+            elif not scores.strip() and not goal_picks.strip() and not half_full.strip():
+                st.error("至少填写比分、进球数或半全场中的一项。")
+            else:
+                rec_mod.save_recommendation(
+                    selected.get("match_number"), home_team, away_team, source,
+                    scores, goal_picks, half_full, confidence=confidence, note=note,
+                )
+                st.success("已保存推荐。")
+                st.rerun()
+    if not is_owner():
+        st.caption("🔒 访客只读；保存推荐和 AI 分析需要所有者模式。")
+
+    recs, consensus = _rec_context(model, selected, fixtures)
+    st.markdown("**已记录推荐**")
+    if recs:
+        st.dataframe(pd.DataFrame([{
+            "来源": r["source"],
+            "比分": " / ".join(r["scores"]) or "—",
+            "进球数": " / ".join(r["goal_picks"]) or "—",
+            "半全场": " / ".join(r["half_full_picks"]) or "—",
+            "置信度": r["confidence"],
+            "备注": r["note"],
+        } for r in recs]), hide_index=True, width="stretch")
+        del_cols = st.columns(min(4, len(recs)))
+        for i, r in enumerate(recs):
+            with del_cols[i % len(del_cols)]:
+                if is_owner() and st.button(f"删除 {r['source']} #{r['id']}", key=f"del_rec:{r['id']}"):
+                    rec_mod.delete_recommendation(r["id"])
+                    st.rerun()
+    else:
+        st.caption("暂无外部推荐，先保存一个来源后再做共识对比。")
+
+    section_title("综合排序")
+    t1, t2 = st.columns([1.2, 1])
+    with t1:
+        _rec_table(consensus["score_recommendations"], "比分推荐 Top", "score")
+    with t2:
+        _rec_table(consensus["goal_recommendations"], "进球数推荐 Top", "label")
+    _rec_table(consensus["half_full_recommendations"], "半全场推荐 Top", "label")
+
+    with st.expander("🤖 AI 综合分析（ds-v4-pro / 当前 LLM 配置）", expanded=bool(recs)):
+        st.caption("AI 会读取外部推荐、程序综合排序、球队风格、强弱分和模型 λ；程序排序即使无 AI 也可用。")
+        if action_button("生成 AI 综合分析", key=f"rec_ai:{selected.get('match_number')}"):
+            with st.spinner("AI 正在综合比分、进球数和半全场方向…"):
+                st.session_state[f"rec_ai_text:{selected.get('match_number')}"] = rec_mod.ai_analyze(
+                    home_team, away_team, recs, consensus
+                )
+        ai = st.session_state.get(f"rec_ai_text:{selected.get('match_number')}")
+        if ai:
+            (st.info if ai.get("ok") else st.warning)(ai["text"])
+        elif not recs:
+            st.caption("暂无外部推荐，建议先录入至少一个来源。")
+
+
 inject_design_system()
 user = require_login()
 require_view_access()  # 访问口令墙：设了 ACCESS_PASSWORD 才生效；管理员 ?owner= 免口令
@@ -3041,7 +3227,7 @@ render_hero(
     "比分概率、盘口价值、晋级之路与证据分析集中在一个可操作界面中。模型结论仅供参考，请理性参与并遵守当地法规。",
 )
 
-page_options = ["首页", "淘汰赛", "单场分析", "晋级之路", "小组赛赛程", "小组出线", "球队查询", "大胆预测", "赛后复盘", "AI 分析师"]
+page_options = ["首页", "淘汰赛", "单场分析", "推荐对比", "晋级之路", "小组赛赛程", "小组出线", "球队查询", "大胆预测", "赛后复盘", "AI 分析师"]
 if is_owner():
     page_options.append("访问记录")
 if user["role"] == "admin":
@@ -3078,6 +3264,9 @@ if page == "赛后复盘":
     st.stop()
 if page == "AI 分析师":
     render_global_chat(model)
+    st.stop()
+if page == "推荐对比":
+    render_recommendation_compare(model, fixtures)
     st.stop()
 if page == "用户管理":
     render_user_management()
@@ -3178,6 +3367,10 @@ if home not in model.teams or away not in model.teams:
 section_title(f"{zh(home)} vs {zh(away)}")
 if venue_info:
     st.caption(venue_info)
+if selected_fixture is not None and st.button("🧾 进入本场推荐对比", key=f"go_rec_compare:{selected_fixture.get('match_number')}"):
+    st.session_state["rec_focus_match_number"] = selected_fixture.get("match_number")
+    st.session_state["top_page_nav"] = "推荐对比"
+    st.rerun()
 from wc2026.analysis import ranking as _ranking
 _hr, _hsrc = _ranking.world_rank(model, home)
 _ar, _asrc = _ranking.world_rank(model, away)

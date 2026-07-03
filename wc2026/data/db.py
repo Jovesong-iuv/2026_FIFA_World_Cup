@@ -128,6 +128,24 @@ CREATE TABLE IF NOT EXISTS team_adjustments (
     sources_json TEXT,
     updated_at TEXT
 );
+
+-- 外部/人工比分推荐对比：同一场可记录多个来源，每个来源可给多个比分、进球数和半全场判断
+CREATE TABLE IF NOT EXISTS match_recommendations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT,
+    updated_at TEXT,
+    match_number INTEGER,
+    home_team TEXT NOT NULL,
+    away_team TEXT NOT NULL,
+    source TEXT NOT NULL,
+    scores_json TEXT,
+    goal_picks_json TEXT,
+    half_full_json TEXT,
+    confidence TEXT DEFAULT '中',
+    weight REAL DEFAULT 1.0,
+    note TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_match_recs_match ON match_recommendations(match_number, home_team, away_team);
 """
 
 
