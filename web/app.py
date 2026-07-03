@@ -1003,6 +1003,17 @@ html::-webkit-scrollbar {{ display:none; }}
 .record-stats b {{ display:block; font-size:20px; }}
 .record-stats span {{ color:var(--dim); font-size:12px; }}
 .recent {{ margin-top:12px; color:var(--muted); font-size:13px; line-height:1.7; }}
+.group-standings {{ padding:18px 20px 20px; }}
+.group-standings h3 {{ margin:0 0 10px; font-size:15px; color:#ffd58a; }}
+.group-table {{ width:100%; border-collapse:collapse; font-size:12px; }}
+.group-table th {{ color:var(--dim); padding:7px 6px; text-align:center; border-bottom:1px solid rgba(255,255,255,.08); }}
+.group-table td {{ padding:8px 6px; text-align:center; border-bottom:1px solid rgba(255,255,255,.05); }}
+.group-table td.team {{ text-align:left; font-weight:800; }}
+.group-table tr.highlight td {{ background:rgba(59,130,246,.13); color:#dbeafe; }}
+.group-pill {{ display:inline-block; padding:3px 8px; border-radius:999px; font-size:11px; font-weight:900; }}
+.group-pill.advance {{ background:rgba(16,185,129,.18); color:#7bf7c5; }}
+.group-pill.pending {{ background:rgba(245,158,11,.18); color:#ffd58a; }}
+.group-pill.risk {{ background:rgba(239,68,68,.18); color:#ffaaa9; }}
 .grid2 {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; padding:20px; }}
 .radar-wrap {{ display:grid; place-items:center; min-height:340px; }}
 canvas {{ max-width:100%; }}
@@ -1174,6 +1185,16 @@ function renderTeamComparison() {{
     </div>
     <div class="records">${{recordBox(h)}}${{recordBox(a)}}</div>
   </div>`;
+}}
+function renderGroupStandings() {{
+  const gs = DATA.group_standings || {{}}, rows = gs.rows || [];
+  if (!rows.length) return '';
+  const body = rows.map(r => {{
+    const cls = r.highlight ? 'highlight' : '';
+    const zone = zoneClass(r.zone || '');
+    return `<tr class="${{cls}}"><td>${{r.rank || '—'}}</td><td class="team">${{r.flag}} ${{r.team_cn}}</td><td>${{r.played}}</td><td>${{r.w}}-${{r.d}}-${{r.l}}</td><td>${{r.gf}}/${{r.ga}}</td><td>${{r.gd>0?'+':''}}${{r.gd}}</td><td><b>${{r.pts}}</b></td><td>${{esc(r.form || '—')}}</td><td><span class="group-pill ${{zone}}">${{esc(r.zone || '待定')}}</span></td></tr>`;
+  }}).join('');
+  return `<div class="card group-standings"><h3>${{esc(gs.group_letter || gs.group || '小组')}}组小组赛战绩</h3><table class="group-table"><thead><tr><th>#</th><th>球队</th><th>赛</th><th>胜平负</th><th>进/失</th><th>净</th><th>分</th><th>走势</th><th>区域</th></tr></thead><tbody>${{body}}</tbody></table></div>`;
 }}
 function renderDimensions() {{
   const dims = DATA.dimensions, keys = Object.keys(dims.team_a || {{}});
@@ -1363,7 +1384,7 @@ function drawDonut() {{
   const c=$('#donut'); if(!c) return; const ctx=c.getContext('2d'), p=DATA.prediction, vals=[p.team_a_win_prob,p.draw_prob,p.team_b_win_prob], cols=['#3b82f6','#f59e0b','#ef4444'];
   let start=-Math.PI/2; vals.forEach((v,i)=>{{ ctx.beginPath(); ctx.moveTo(130,130); ctx.arc(130,130,112,start,start+v*Math.PI*2); ctx.closePath(); ctx.fillStyle=cols[i]; ctx.fill(); start+=v*Math.PI*2; }}); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(130,130,72,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over';
 }}
-$('#app').innerHTML = renderTeamComparison()+renderDimensions()+renderPrediction()+renderGroupStrategicAnalysis()+renderKnockout()+renderOdds()+renderSummary()+renderChampion();
+$('#app').innerHTML = renderTeamComparison()+renderGroupStandings()+renderDimensions()+renderPrediction()+renderGroupStrategicAnalysis()+renderKnockout()+renderOdds()+renderSummary()+renderChampion();
 drawRadar(); drawDonut();
 (function() {{
   var btn = document.getElementById('backTop');
@@ -3274,22 +3295,6 @@ with uc2:
 st.caption("爆冷指数衡量「把热门方当稳胆」的风险，不预测弱队一定爆冷；指数越高，越不适合作为无脑稳胆。"
            "暂未纳入伤停 / 海拔 / 时差 / 历史大赛不稳定性（项目无对应结构化数据源）。")
 
-with st.expander("📥 分享海报（生成 PNG）", expanded=False):
-    from wc2026.analysis import schedule as _sch_p
-    _rtxt = None
-    if selected_fixture is not None:
-        _rp = _sch_p.match_result(selected_fixture.get("home_score"), selected_fixture.get("away_score"))
-        _rtxt = _rp["score"].replace("-", " - ") if _rp["finished"] else None
-    try:
-        from wc2026.viz.poster import match_poster_png
-        _png = match_poster_png(zh(home), zh(away), x, upset=ui, home_rank=_hr, away_rank=_ar,
-                                result=_rtxt, subtitle=(venue_info or "").replace("🗓 ", ""))
-        st.image(_png, caption="预览", width=680)
-        st.download_button("📥 下载海报 PNG", _png, file_name=f"{home}_vs_{away}.png", mime="image/png")
-        st.caption("无 CJK 字体的服务器上会自动改用英文队名。模型概率仅供参考。")
-    except Exception as exc:
-        st.caption(f"海报生成失败：{exc}")
-
 section_title("赛前环境与背景适应性")
 env_score = env_report["score_pick"]
 ec1, ec2 = st.columns([1, 3])
@@ -3444,7 +3449,7 @@ if not _ma.get("available"):
 if action_button("🌐 联网补全分场分析数据", key=f"refresh_match_insight:{home}:{away}",
                  help="尝试拉取 FBref 射门/xG、FotMob 阵容/阵型/伤停、新闻标题，并写入 data/match_insights.json"):
     with st.spinner("联网补全分场分析数据…"):
-        _mi_res = _match_insights.refresh_match_insight(home, away)
+        _mi_res = _match_insights.refresh_match_insight(home, away, model=model)
         _bridge_payload["match_analysis"] = _match_insights.build_match_analysis(
             home, away, {"prediction": _bridge_payload.get("prediction", {})}
         )

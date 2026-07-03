@@ -125,6 +125,58 @@ def _standings_zone(rank: int | None) -> str:
     return "淘汰风险区"
 
 
+def _team_form(group_data: dict, group: str, team: str) -> str:
+    gd = group_data.get(group) or {}
+    teams = gd.get("teams") or []
+    form = []
+    for hi, ai, hs, as_ in gd.get("matches") or []:
+        if hs is None or as_ is None:
+            continue
+        home = teams[hi]
+        away = teams[ai]
+        if team not in {home, away}:
+            continue
+        gf = hs if team == home else as_
+        ga = as_ if team == home else hs
+        form.append("W" if gf > ga else ("D" if gf == ga else "L"))
+    return "".join(form[-3:]) or "—"
+
+
+def _group_standings_payload(group_data: dict, standings: dict, fixture: dict | None,
+                             home: str, away: str) -> dict:
+    group = (fixture or {}).get("group_name") or ""
+    if not group:
+        for g, rows in standings.items():
+            if any(r["team"] in {home, away} for r in rows):
+                group = g
+                break
+    rows = []
+    for r in standings.get(group, []):
+        rows.append({
+            "team": r["team"],
+            "team_cn": zh(r["team"]),
+            "flag": flag_emoji(r["team"]),
+            "rank": r["rank"],
+            "played": r["played"],
+            "w": r["w"],
+            "d": r["d"],
+            "l": r["l"],
+            "gf": r["gf"],
+            "ga": r["ga"],
+            "gd": r["gd"],
+            "pts": r["pts"],
+            "zone": _standings_zone(r["rank"]),
+            "form": _team_form(group_data, group, r["team"]),
+            "highlight": r["team"] in {home, away},
+        })
+    return {
+        "group": group,
+        "group_letter": group.replace("Group ", "") if group else "",
+        "teams": [home, away],
+        "rows": rows,
+    }
+
+
 def _profile_for(model, team: str, report: dict, fixture: dict | None,
                  standings: dict, fixtures: list[dict] | None, profiles: dict) -> dict:
     prof = profiles.get(team, {})
@@ -262,6 +314,7 @@ def build_dashboard_payload(model, home: str, away: str, neutral: bool = True, *
         },
         "odds_validation": _market_for_dashboard(report),
         "knockout": ko_payload,
+        "group_standings": _group_standings_payload(gd, standings, fixture, home, away),
         "summary": report["summary"],
         "match_analysis": report.get("match_analysis"),
         "tournament_facts": tournament_facts.compare_teams(home, away),

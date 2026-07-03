@@ -8,6 +8,7 @@ import json
 from datetime import datetime, timezone
 
 from wc2026.config import settings
+from wc2026.analysis import groups
 from wc2026.data.team_names import zh
 from wc2026.data import squads
 from wc2026.data.db import get_conn
@@ -176,7 +177,43 @@ def _web_search_stats(team: str) -> dict | None:
         return None
 
 
-def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH) -> dict:
+def _current_group_rows(home: str, away: str, model) -> list[dict]:
+    if model is None:
+        return []
+    gd = groups.load_group_data(model)
+    standings = groups.compute_standings(gd) if gd else {}
+    out = []
+    for group, rows in standings.items():
+        wanted = [r for r in rows if r["team"] in {home, away}]
+        if not wanted:
+            continue
+        teams = gd[group]["teams"]
+        for r in wanted:
+            form = []
+            for hi, ai, hs, as_ in gd[group]["matches"]:
+                if hs is None or as_ is None:
+                    continue
+                h, a = teams[hi], teams[ai]
+                if r["team"] not in {h, a}:
+                    continue
+                gf = hs if r["team"] == h else as_
+                ga = as_ if r["team"] == h else hs
+                form.append("W" if gf > ga else ("D" if gf == ga else "L"))
+            out.append({
+                "team": r["team"],
+                "source": "本地小组赛战绩",
+                "takeaway": (
+                    f"小组赛{r['w']}胜{r['d']}平{r['l']}负，"
+                    f"进{r['gf']}失{r['ga']}，积分{r['pts']}，"
+                    f"当前{group.replace('Group ', '')}组第{r['rank']}，"
+                    f"近三场走势{''.join(form[-3:]) or '—'}。"
+                ),
+            })
+        break
+    return out
+
+
+def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH, model=None) -> dict:
     """联网补全本场分场分析缓存。
 
     数据源优先级：FBref → FotMob → 联网搜索+LLM。
@@ -230,6 +267,9 @@ def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH) -> dict:
                 errors.append(f"联网搜索 {zh(team)}: {ws_exc}")
 
     rows = [r for r in rows if r]
+    if len(rows) < 2:
+        known = {r.get("team") for r in rows}
+        rows.extend(r for r in _current_group_rows(home, away, model) if r.get("team") not in known)
     if rows:
         entry["prior_matches"] = rows
 

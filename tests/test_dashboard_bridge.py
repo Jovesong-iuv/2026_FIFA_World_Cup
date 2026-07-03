@@ -38,6 +38,46 @@ class DashboardBridgePayloadTest(unittest.TestCase):
         self.assertIn("advance", payload["knockout"])
         self.assertIn("ev_board", payload["knockout"])
         self.assertEqual(payload["tournament_facts"]["home"]["team"], "Spain")
+        self.assertIn("group_standings", payload)
+
+    def test_group_standings_payload_highlights_match_group(self):
+        pred = {
+            "matrix": __import__("numpy").array([[0.4, 0.1], [0.2, 0.3]]),
+            "dimensions": {
+                "dims": [],
+                "score_home": 70,
+                "score_away": 64,
+                "explanation": "测试",
+                "data_quality": 1.0,
+            },
+            "exp_goals": (1.2, 0.8),
+            "base_exp_goals": (1.1, 0.9),
+            "adj_factors": {},
+            "notes": [],
+            "confidence": "中",
+            "tank_risk": False,
+        }
+        gd = {
+            "Group C": {
+                "teams": ["Spain", "Saudi Arabia", "Japan", "Ghana"],
+                "matches": [(0, 1, 2, 0), (2, 3, 1, 1), (0, 2, None, None)],
+            }
+        }
+
+        with patch("wc2026.analysis.dashboard_bridge.groups.load_group_data", return_value=gd), \
+                patch("wc2026.analysis.dashboard_bridge.tournament_facts.compare_teams",
+                      return_value={"home": {"team": "Spain"}, "away": {"team": "Saudi Arabia"}}):
+            payload = dashboard_bridge.build_dashboard_payload(
+                _Model(), "Spain", "Saudi Arabia",
+                fixture={"group_name": "Group C"}, fixtures=[], pred=pred
+            )
+
+        self.assertEqual(payload["group_standings"]["group"], "Group C")
+        self.assertEqual(payload["group_standings"]["group_letter"], "C")
+        self.assertEqual(payload["group_standings"]["teams"], ["Spain", "Saudi Arabia"])
+        self.assertEqual(payload["group_standings"]["rows"][0]["team"], "Spain")
+        self.assertTrue(payload["group_standings"]["rows"][0]["highlight"])
+        self.assertEqual(payload["group_standings"]["rows"][0]["form"], "W")
 
 
 class _Model:

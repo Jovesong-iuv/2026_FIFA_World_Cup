@@ -133,6 +133,42 @@ class MatchInsightsTest(unittest.TestCase):
             self.assertIn("约5.8预期进球", built["text"])
             self.assertNotIn("瑞士首轮，65%控球", built["text"])
 
+    def test_refresh_match_insight_uses_local_group_record_when_online_sources_are_blocked(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "match_insights.json"
+            gd = {
+                "Group C": {
+                    "teams": ["Spain", "Saudi Arabia", "Japan", "Ghana"],
+                    "matches": [(0, 1, 2, 0), (0, 2, 1, 1), (1, 3, 0, 0)],
+                }
+            }
+            with patch("wc2026.analysis.match_insights.fbref.fetch_team_shooting",
+                       side_effect=RuntimeError("HTTP 403")), \
+                    patch("wc2026.analysis.match_insights._fotmob_stats_for_team",
+                          side_effect=RuntimeError("HTTP 403")), \
+                    patch("wc2026.analysis.match_insights._web_search_stats", return_value=None), \
+                    patch("wc2026.analysis.match_insights.groups.load_group_data", return_value=gd), \
+                    patch("wc2026.analysis.match_insights.squads.refresh_fm_squad",
+                          side_effect=RuntimeError("HTTP 403")), \
+                    patch("wc2026.analysis.match_insights.news.fetch_for_teams", return_value=[]), \
+                    patch("wc2026.analysis.match_insights.news.deep_search_and_analyze",
+                          return_value=None):
+                res = refresh_match_insight("Spain", "Saudi Arabia", path=path, model=_Model())
+
+            self.assertFalse(res["ok"])
+            built = build_match_analysis(
+                "Spain", "Saudi Arabia", {"prediction": {}},
+                insights=__import__("json").loads(path.read_text(encoding="utf-8")),
+            )
+            self.assertTrue(built["available"])
+            self.assertIn("小组赛1胜1平0负", built["text"])
+            self.assertIn("小组赛0胜1平1负", built["text"])
+
+
+class _Model:
+    def has_team(self, _t):
+        return True
+
 
 if __name__ == "__main__":
     unittest.main()
