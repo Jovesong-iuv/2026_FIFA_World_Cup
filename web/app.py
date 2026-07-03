@@ -133,6 +133,30 @@ def inject_design_system() -> None:
             border-radius: 8px;
             background: var(--wc-surface);
         }
+        [data-baseweb="select"] input,
+        [data-baseweb="input"] input,
+        textarea {
+            font-size: 16px !important;
+        }
+        div[data-testid="stPills"] [role="group"],
+        div[data-testid="stSegmentedControl"] [role="group"],
+        div[data-testid="stButtonGroup"] div[role="radiogroup"] {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding-bottom: 2px;
+            scrollbar-width: thin;
+        }
+        div[data-testid="stButtonGroup"] div[role="radiogroup"] {
+            flex-wrap: nowrap !important;
+        }
+        div[data-testid="stButtonGroup"] div[role="radiogroup"] button {
+            flex: 0 0 auto;
+            max-width: min(340px, 86vw);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
         .stButton > button,
         .stFormSubmitButton > button {
             border-radius: 8px;
@@ -381,6 +405,62 @@ def inject_design_system() -> None:
             font-size: 12px;
             font-weight: 800;
         }
+        .wc-group-grid,
+        .wc-ko-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            align-items: start;
+        }
+        .wc-ko-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .wc-group-card,
+        .wc-ko-card {
+            border: 1px solid var(--wc-line);
+            border-radius: 10px;
+            background: var(--wc-surface);
+            min-width: 0;
+        }
+        .wc-group-card {
+            padding: 10px 12px;
+            margin-bottom: 0;
+        }
+        .wc-ko-card {
+            padding: 12px 14px;
+        }
+        .wc-ko-card.finished {
+            opacity: .75;
+        }
+        .wc-ko-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
+        }
+        .wc-ko-head span {
+            min-width: 0;
+        }
+        .wc-ko-meta {
+            color: var(--wc-muted);
+            font-size: 12px;
+        }
+        .wc-ko-team-main {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+        .wc-ko-team-note {
+            margin-top: 2px;
+            font-size: 11px;
+            color: var(--wc-muted);
+        }
+        .wc-ko-divider {
+            border-top: 1px solid var(--wc-line);
+            margin: 6px 0;
+        }
         @media (max-width: 760px) {
             .block-container {
                 padding: .85rem .8rem 2rem;
@@ -449,6 +529,30 @@ def inject_design_system() -> None:
             div[data-testid="stDataEditor"] {
                 overflow-x: auto;
             }
+            div[data-testid="stPills"] [role="group"],
+            div[data-testid="stSegmentedControl"] [role="group"],
+            div[data-testid="stButtonGroup"] div[role="radiogroup"] {
+                flex-wrap: nowrap;
+            }
+            .wc-group-grid,
+            .wc-ko-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            .wc-group-card {
+                overflow-x: auto;
+            }
+            .wc-ko-card {
+                padding: 11px 12px;
+            }
+            .wc-ko-head,
+            .wc-ko-team-main {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+            .wc-ko-meta {
+                line-height: 1.45;
+            }
         }
         </style>
         """,
@@ -471,6 +575,23 @@ def render_hero(title: str, subtitle: str, kicker: str = "WORLD CUP MODEL") -> N
 
 def section_title(text: str) -> None:
     st.markdown(f'<div class="wc-section">{text}</div>', unsafe_allow_html=True)
+
+
+def _group_sort_key(group: str) -> tuple[int, str]:
+    name = group or ""
+    if name == "淘汰赛":
+        return (99, name)
+    if name.startswith("Group ") and len(name) >= 7:
+        letter = name.replace("Group ", "", 1).strip()[:1].upper()
+        if "A" <= letter <= "Z":
+            return (ord(letter) - ord("A"), name)
+    if len(name) >= 2 and name[1] == "组" and "A" <= name[0].upper() <= "Z":
+        return (ord(name[0].upper()) - ord("A"), name)
+    return (50, name)
+
+
+def _sorted_groups(groups) -> list[str]:
+    return sorted(groups, key=_group_sort_key)
 
 
 def render_top_nav(page_options: list[str]) -> str:
@@ -1774,6 +1895,23 @@ def render_bracket(model) -> None:
             f'<div class="mb-t">{af} {an}</div></div></div>'
         )
 
+    def _mobile_match(mn: int, label: str) -> str:
+        f = fmap.get(mn)
+        if not f:
+            return ""
+        bj = sch.beijing(f.get("date_utc"))
+        hf, hn = _team_label(f, "home")
+        af, an = _team_label(f, "away")
+        hs, as_ = f.get("home_score"), f.get("away_score")
+        score = f"{int(hs)} : {int(as_)}" if hs is not None and as_ is not None else "vs"
+        return (
+            '<div class="bm-card">'
+            f'<div class="bm-meta">{label} · M{mn} · {bj["date"]} {bj["time"]}</div>'
+            f'<div class="bm-row"><span>{hf} {hn}</span><b>{score}</b><span>{af} {an}</span></div>'
+            f'<div class="bm-loc">{f.get("location", "")}</div>'
+            '</div>'
+        )
+
     boxes = []
     # 左半区
     for i, mn in enumerate(range(73, 81)):
@@ -1831,6 +1969,20 @@ def render_bracket(model) -> None:
     boxes_html = "\n".join(boxes)
     total_w = XR["r32"] + BW + 20
     total_h = R32_Y[-1] + BH / 2 + 20
+    mobile_sections = []
+    for label, mns in [
+        ("32强", range(73, 89)),
+        ("16强", range(89, 97)),
+        ("八强", range(97, 101)),
+        ("半决赛", range(101, 103)),
+        ("决赛 / 三四名", range(103, 105)),
+    ]:
+        mobile_sections.append(
+            f'<section class="bm-sec"><h3>{label}</h3>'
+            + "".join(_mobile_match(mn, label) for mn in mns)
+            + '</section>'
+        )
+    mobile_html = "\n".join(mobile_sections)
 
     css = """<style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1846,6 +1998,21 @@ body{background:transparent}
 .mb-b{background:#fff;padding:1px 0}
 .mb-t{color:#1a1a1a;font-size:11px;padding:2px 7px;line-height:15px;white-space:normal;word-break:break-word;overflow:hidden}
 .cl{position:absolute;text-align:center;width:160px;font-size:13px;font-weight:700;color:#fbbf24}
+.bm{display:none}
+.bm-sec{display:grid;gap:8px}
+.bm-sec h3{font-size:15px;color:#fbbf24;margin:2px 0 0}
+.bm-card{border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(255,255,255,.96);padding:9px 10px;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.bm-meta{font-size:11px;color:#64748b;font-weight:700;margin-bottom:6px}
+.bm-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;color:#111827;font-size:13px;font-weight:800}
+.bm-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bm-row b{color:#dc2626}
+.bm-loc{margin-top:5px;color:#64748b;font-size:11px}
+@media(max-width:700px){
+  .bw{padding:12px}
+  .bt{font-size:18px;letter-spacing:2px;margin-bottom:10px}
+  .ba{display:none}
+  .bm{display:grid;gap:12px}
+}
 </style>
 <script>
 function fitBracket(){
@@ -1869,6 +2036,7 @@ window.addEventListener('resize',fitBracket);
     <div class="cl" style="left:{XC}px;top:{final_cy - BH / 2 - 22}px;">决赛</div>
     <div class="cl" style="left:{XC}px;top:{third_cy - BH / 2 - 22}px;">三四名决赛</div>
   </div>
+  <div class="bm">{mobile_html}</div>
 </div>"""
 
     components.html(html, height=int(total_h) + 140, scrolling=True)
@@ -1939,8 +2107,7 @@ def _standings_table_html(group: str, rows: list[dict], state: dict | None = Non
         tds.append(f'<td style="text-align:center;padding:2px 4px;font-weight:700;">{r["pts"]}</td>')
         tds.append(f'<td style="text-align:right;padding:2px 4px;color:{bar};font-size:11px;font-weight:700;">{zone}</td>')
         body += f'<tr style="background:{bg};">' + "".join(tds) + "</tr>"
-    return (f'<div style="border:1px solid var(--wc-line);border-radius:10px;padding:10px 12px;'
-            f'margin-bottom:14px;background:var(--wc-surface);">{head}'
+    return (f'<div class="wc-group-card">{head}'
             f'<table style="width:100%;border-collapse:collapse;font-size:12px;">'
             f'<thead>{thead}</thead><tbody>{body}</tbody></table></div>')
 
@@ -2019,8 +2186,7 @@ def _group_card_html(group: str, rows: list[dict]) -> str:
             f'<div style="font-size:12px;color:var(--wc-muted);">头名 {r["first"]:.1%} · 前二 {r["top2"]:.1%} · 第三递补 {r["third_advance"]:.1%}</div>'
             '</div>'
         )
-    return (f'<div style="border:1px solid var(--wc-line);border-radius:10px;padding:12px 14px;'
-            f'margin-bottom:14px;background:var(--wc-surface);">{head}{body}</div>')
+    return f'<div class="wc-group-card">{head}{body}</div>'
 
 
 def render_group_stage(model) -> None:
@@ -2043,11 +2209,11 @@ def render_group_stage(model) -> None:
     _adjustments_expander()
     standings = groups_mod.compute_standings(gd)
     states = motiv_mod.derive_group_states(gd)
-    scols = st.columns(3)
-    for i, g in enumerate(sorted(standings)):
-        with scols[i % 3]:
-            st.markdown(_standings_table_html(g, standings[g], states.get(g, {})),
-                        unsafe_allow_html=True)
+    standings_html = "".join(
+        _standings_table_html(g, standings[g], states.get(g, {}))
+        for g in _sorted_groups(standings)
+    )
+    st.markdown(f'<div class="wc-group-grid">{standings_html}</div>', unsafe_allow_html=True)
 
     st.markdown("---")
     section_title("小组出线概率")
@@ -2066,10 +2232,8 @@ def render_group_stage(model) -> None:
         with st.spinner(f"蒙特卡洛模拟 {n_sims:,} 次…"):
             st.session_state[cache_key] = groups_mod.simulate_groups(model, gd, n_sims=n_sims)
     res = st.session_state[cache_key]
-    cols = st.columns(3)
-    for i, g in enumerate(sorted(res)):
-        with cols[i % 3]:
-            st.markdown(_group_card_html(g, res[g]), unsafe_allow_html=True)
+    groups_html = "".join(_group_card_html(g, res[g]) for g in _sorted_groups(res))
+    st.markdown(f'<div class="wc-group-grid">{groups_html}</div>', unsafe_allow_html=True)
     st.caption("⚽ 小组出线概率会随每轮赛果快速变化；末轮尤其注意战意差异：已出线可能轮换、已淘汰战意下降、"
                "积分相近可能更保守。排序近似 积分>净胜球>进球数，未完全实现相互战绩等次级规则；"
                "未显示 FIFA 排名（项目暂无该数据源）。")
@@ -2115,17 +2279,16 @@ def render_group_stage(model) -> None:
         return f"{zh(b['team'])}（次名）"
 
     from wc2026.analysis.tournament import R32_SLOTS
-    bcols = st.columns(2)
-    for half, col in enumerate(bcols):
-        with col:
-            st.caption("上半区" if half == 0 else "下半区")
-            for mn, (hs, as_) in enumerate(R32_SLOTS[half * 8:half * 8 + 8], start=73 + half * 8):
-                st.markdown(
-                    f'<div style="border:1px solid var(--wc-line);border-radius:8px;padding:8px 10px;'
-                    f'margin-bottom:6px;background:var(--wc-surface);font-size:13px;">'
-                    f'<span style="color:var(--wc-muted);">M{mn} · {hs} vs {as_}</span><br>'
-                    f'<b>{_slot_proj(hs)}</b> <span style="color:var(--wc-muted);">vs</span> <b>{_slot_proj(as_)}</b>'
-                    f'</div>', unsafe_allow_html=True)
+    slot_cards = []
+    for mn, (hs, as_) in enumerate(R32_SLOTS, start=73):
+        half_label = "上半区" if mn < 81 else "下半区"
+        slot_cards.append(
+            f'<div class="wc-ko-card">'
+            f'<span class="wc-ko-meta">{half_label} · M{mn} · {hs} vs {as_}</span><br>'
+            f'<b>{_slot_proj(hs)}</b> <span style="color:var(--wc-muted);">vs</span> <b>{_slot_proj(as_)}</b>'
+            f'</div>'
+        )
+    st.markdown(f'<div class="wc-ko-grid">{"".join(slot_cards)}</div>', unsafe_allow_html=True)
     st.caption("对阵 slot 来自官方赛程（1A=A 组头名、2B=B 组次名、3XXXX=列出小组中的最佳第三）；"
                "投影球队为当前小组模拟的最可能占位，随赛果变化。R16 之后由 32 强结果决定，晋级概率见上方夺冠表。")
 
@@ -2152,10 +2315,16 @@ def render_knockout_stage(model) -> None:
     round_options = [(r, _STAGE_LABELS.get(r, f"第{r}轮")) for r in available_rounds]
     round_labels = [lbl for _, lbl in round_options]
     default_idx = round_options.index((current_round, current_label)) if (current_round, current_label) in round_options else 0
-    sel_label = st.selectbox("选择轮次", round_labels, index=default_idx, key="ko_round")
+    sel_label = st.segmented_control(
+        "选择轮次", round_labels, default=round_labels[default_idx],
+        key="ko_round_segment", width="stretch"
+    )
+    if sel_label is None:
+        sel_label = round_labels[default_idx]
     sel_round = [r for r, lbl in round_options if lbl == sel_label][0]
 
-    matches = [f for f in ko if f["round_number"] == sel_round]
+    matches = sorted([f for f in ko if f["round_number"] == sel_round],
+                     key=lambda f: f.get("match_number", 0))
 
     # 小组赛 standings 用于历史数据参考
     gd = _grp.load_group_data(model)
@@ -2189,8 +2358,8 @@ def render_knockout_stage(model) -> None:
 
     # ── 对阵卡片 ──
     section_title(f"{_STAGE_LABELS.get(sel_round, sel_label)} · 对阵一览")
-    cols = st.columns(2)
-    for i, f in enumerate(matches):
+    cards = []
+    for f in matches:
         mn = f["match_number"]
         h, h_slot = _resolve_team(f, "home")
         a, a_slot = _resolve_team(f, "away")
@@ -2208,9 +2377,9 @@ def render_knockout_stage(model) -> None:
                 ts_str = (f'<span style="font-size:11px;color:var(--wc-muted);">'
                           f'小组赛 {ts["w"]}-{ts["d"]}-{ts["l"]} · {ts["pts"]}分 · '
                           f'净胜{ts["gd"]:+d} · 进{ts["gf"]}</span>')
-            return (f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+            return (f'<div class="wc-ko-team-main">'
                     f'<span>{_flag(team)} <b>{zh(team)}</b> {rk_str}</span></div>'
-                    + (f'<div style="margin-top:2px;">{ts_str}</div>' if ts_str else ""))
+                    + (f'<div class="wc-ko-team-note">{ts_str}</div>' if ts_str else ""))
 
         # 胜率条（仅未完赛且两队都已确定时计算）
         prob_bar = ""
@@ -2238,25 +2407,23 @@ def render_knockout_stage(model) -> None:
             time_html = f'<span style="color:var(--wc-muted);font-size:12px;">⏳ {bj["full"]}（北京）</span>'
 
         border_style = "dashed" if (h_slot or a_slot) else "solid"
-        opacity = "opacity:0.75;" if finished else ""
+        finished_class = " finished" if finished else ""
         slot_tag = ('<span style="background:#f59e0b;color:#000;font-size:10px;padding:1px 6px;'
                     'border-radius:8px;margin-left:6px;">待定</span>') if (h_slot or a_slot) else ""
 
-        card = (
-            f'<div style="border:1px {border_style} var(--wc-line);border-radius:10px;padding:12px 14px;'
-            f'margin-bottom:12px;background:var(--wc-surface);{opacity}">'
-            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
-            f'<span style="font-size:12px;color:var(--wc-muted);">M{mn} · 📍{f.get("location", "")}</span>'
+        cards.append(
+            f'<div class="wc-ko-card{finished_class}" style="border-style:{border_style};">'
+            f'<div class="wc-ko-head">'
+            f'<span class="wc-ko-meta">M{mn} · 📍{f.get("location", "")}</span>'
             f'{time_html}{slot_tag}</div>'
             f'{_team_line(h, h_slot, "home")}'
             f'{score_html}'
-            f'<div style="border-top:1px solid var(--wc-line);margin:6px 0;"></div>'
+            f'<div class="wc-ko-divider"></div>'
             f'{_team_line(a, a_slot, "away")}'
             f'{prob_bar}'
             f'</div>'
         )
-        with cols[i % 2]:
-            st.markdown(card, unsafe_allow_html=True)
+    st.markdown(f'<div class="wc-ko-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
 
     # ── 晋级概率总览 ──
     st.markdown("---")
@@ -2442,7 +2609,7 @@ def render_home(model) -> None:
     s3.metric("模型更新", sig)
 
     f1, f2, f3 = st.columns([1, 1, 2])
-    fg = f1.selectbox("小组", ["全部"] + sorted({r.get("group_name") or "淘汰赛" for r in rows}))
+    fg = f1.selectbox("小组", ["全部"] + _sorted_groups({r.get("group_name") or "淘汰赛" for r in rows}))
     fr = f2.selectbox("轮次", ["全部", 1, 2, 3])
     q = f3.text_input("搜索球队（中 / 英文）").strip().lower()
     only_upset = st.checkbox("只看爆冷预警（指数 ≥ 61）")
@@ -2612,7 +2779,7 @@ def render_schedule(model) -> None:
         st.warning("暂无赛程数据（需先刷新 2026 赛程）。")
         return
     rank_map = rk.world_rank_map(model)
-    groups = sorted({f["group_name"] for f in fixtures if f.get("group_name")})
+    groups = _sorted_groups({f["group_name"] for f in fixtures if f.get("group_name")})
     fg = st.selectbox("分组筛选", ["全部"] + groups, key="sched_group")
     flist = [f for f in fixtures if fg == "全部" or f.get("group_name") == fg]
     flist = sch.sort_fixtures(flist, datetime.now(timezone.utc))
@@ -2698,7 +2865,7 @@ def render_bold_predictions(model) -> None:
         return
 
     # 过滤控件
-    groups = sorted({r["group_raw"] for r in rows})
+    groups = _sorted_groups({r["group_raw"] for r in rows})
     sel_group = st.selectbox("分组", ["全部"] + groups, key="bold_group")
     show_played = st.checkbox("显示已完赛场次", value=False, key="bold_played")
     only_upset = st.checkbox("只看冷门关注（爆冷指数 ≥ 60）", value=False, key="bold_upset")
@@ -2987,7 +3154,7 @@ def render_global_chat(model) -> None:
         return
 
     teams = sorted({f["home_team"] for f in fixtures} | {f["away_team"] for f in fixtures})
-    groups_list = sorted({f["group_name"] for f in fixtures if f.get("group_name")})
+    groups_list = _sorted_groups({f["group_name"] for f in fixtures if f.get("group_name")})
     fc1, fc2 = st.columns(2)
     sel_team = fc1.selectbox("聚焦球队（可选）", ["（全局）"] + [zh(t) for t in teams], key="gchat_team")
     sel_group = fc2.selectbox("聚焦小组（可选）", ["（全局）"] + groups_list, key="gchat_group")
@@ -3282,9 +3449,19 @@ venue_info = None
 if mode == "按赛程" and fixtures:
     from wc2026.analysis import schedule as _sch
     from datetime import datetime as _dt, timezone as _tz
-    groups = sorted({f.get("group_name") or "淘汰赛" for f in fixtures})
+    groups = _sorted_groups({f.get("group_name") or "淘汰赛" for f in fixtures})
     c1, c2 = st.columns([1, 2.4])
-    g = c1.selectbox("分组", ["全部"] + groups)
+    group_options = ["全部"] + groups
+    group_default = st.session_state.get("single_group_pill", "全部")
+    if group_default not in group_options:
+        group_default = "全部"
+    g = c1.pills(
+        "分组", group_options, default=group_default, key="single_group_pill",
+        format_func=lambda value: "全部" if value == "全部" else _group_short(value),
+        width="stretch"
+    )
+    if g is None:
+        g = group_default
 
     _is_ko = (g == "淘汰赛")
     if _is_ko:
@@ -3298,6 +3475,10 @@ if mode == "按赛程" and fixtures:
         flist = _sch.sort_fixtures(
             [f for f in fixtures if g == "全部" or (f.get("group_name") or "淘汰赛") == g], _dt.now(_tz.utc))
 
+    if not flist:
+        st.warning("当前筛选下暂无比赛。")
+        st.stop()
+
     def _fx_label(i):
         f = flist[i]
         ht = f.get("home_team", "") or f.get("home_src", "?")
@@ -3305,12 +3486,22 @@ if mode == "按赛程" and fixtures:
         ht_zh = zh(ht) if ht in model.teams else ht
         at_zh = zh(at) if at in model.teams else at
         res = _sch.match_result(f.get("home_score"), f.get("away_score"))
-        tag = f"✅ {res['score']}" if res["finished"] else (_sch.beijing(f["date_utc"])["full"] if f.get("date_utc") else "—")
+        bj = _sch.beijing(f.get("date_utc"))
+        tag = f"✅ {res['score']}" if res["finished"] else (f"{bj['date'][5:]} {bj['time']}" if bj["date"] != "—" else "—")
         rn = f.get("round_number", "")
-        stage_tag = _STAGE_LABELS.get(rn, f"第{rn}轮") if rn and rn >= 4 else (f.get("group_name") or "")
-        return f"M{f.get('match_number','')} · {stage_tag} · {ht_zh} vs {at_zh}（{tag}）"
+        stage_tag = _STAGE_LABELS.get(rn, f"第{rn}轮") if rn and rn >= 4 else _group_short(f.get("group_name") or "")
+        return f"M{f.get('match_number','')} · {stage_tag} · {ht_zh} vs {at_zh} · {tag}"
 
-    idx = c2.selectbox("场次", range(len(flist)), format_func=_fx_label)
+    idx_default = st.session_state.get(f"single_match_pill:{g}", 0)
+    if not isinstance(idx_default, int) or idx_default >= len(flist):
+        idx_default = 0
+    idx = c2.pills(
+        "场次", list(range(len(flist))), default=idx_default,
+        key=f"single_match_pill:{g}", format_func=_fx_label,
+        width="stretch"
+    )
+    if idx is None:
+        idx = idx_default
     sel = flist[idx]
     selected_fixture = sel
     home = sel.get("home_team") or sel.get("home_src") or "Unknown"
