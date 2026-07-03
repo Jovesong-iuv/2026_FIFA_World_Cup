@@ -11,10 +11,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from wc2026.analysis import evidence
+from wc2026.analysis import evidence, tournament_facts
 from wc2026.config import settings
 from wc2026.data.db import get_conn
 from wc2026.data.ingest import ingest_international_results
+from wc2026.data.results import apply_results_overlay
 from wc2026.data.sources import news
 from wc2026.data.sources.fixtures_2026 import fetch_and_store_fixtures
 from wc2026.data.team_names import to_lib, zh
@@ -96,6 +97,7 @@ def fixtures(predictable_only: bool = False, group: str | None = None) -> dict:
     q += " ORDER BY date_utc, match_number"
     with get_conn() as conn:
         rows = conn.execute(q, params).fetchall()
+    rows = apply_results_overlay(rows)
     return {"fixtures": [{
         "match_number": r["match_number"], "round": r["round_number"],
         "date_utc": r["date_utc"], "home": r["home_team"], "away": r["away_team"],
@@ -141,16 +143,7 @@ def intelligence_ep(home: str, away: str, neutral: bool = True,
 
     fixture = fixtures = group_state = None
     if match_number is not None:
-        with get_conn() as conn:
-            row = conn.execute(
-                "SELECT match_number, round_number, date_utc, home_team, away_team, "
-                "group_name, location, home_score, away_score FROM fixtures WHERE match_number=?",
-                (match_number,)).fetchone()
-            frows = conn.execute(
-                "SELECT match_number, date_utc, home_team, away_team, location "
-                "FROM fixtures WHERE predictable=1").fetchall()
-        fixture = dict(row) if row else None
-        fixtures = [dict(r) for r in frows]
+        fixture, fixtures = _load_fixtures(match_number)
         if fixture and fixture.get("group_name"):
             try:
                 from wc2026.analysis import groups as _groups, motivation as _motiv
@@ -170,7 +163,7 @@ def intelligence_ep(home: str, away: str, neutral: bool = True,
 def _load_fixtures(match_number: int | None = None):
     """加载（单场 fixture, 全部 predictable fixtures）。两者含比分字段，供审计/锁定复用。"""
     cols = ("match_number, round_number, date_utc, home_team, away_team, "
-            "group_name, location, home_score, away_score")
+            "group_name, location, predictable, home_score, away_score")
     with get_conn() as conn:
         fixture = None
         if match_number is not None:
@@ -178,7 +171,10 @@ def _load_fixtures(match_number: int | None = None):
                                (match_number,)).fetchone()
             fixture = dict(row) if row else None
         frows = conn.execute(f"SELECT {cols} FROM fixtures WHERE predictable=1").fetchall()
-    return fixture, [dict(r) for r in frows]
+    overlaid = apply_results_overlay(frows)
+    if fixture:
+        fixture = apply_results_overlay([fixture])[0]
+    return fixture, overlaid
 
 
 def _group_state_for(model, fixture, home, away):
@@ -272,6 +268,15 @@ def tournament_probabilities_ep(n_sims: int = 2000) -> dict:
     """Tournament advancement/champion probabilities for the HTML dashboard."""
     from wc2026.analysis.dashboard_bridge import _championship_payload
     return {"championship_odds": _championship_payload(get_model(), n_sims=n_sims)}
+
+
+@app.get("/tournament/facts")
+def tournament_facts_ep(match_number: int | None = None) -> dict:
+    """Validated tournament facts: scores, player events and process stats."""
+    data = tournament_facts.load_facts()
+    if match_number is not None:
+        return tournament_facts.match_facts(match_number, data) or {}
+    return data
 
 
 @app.post("/intelligence/refresh")

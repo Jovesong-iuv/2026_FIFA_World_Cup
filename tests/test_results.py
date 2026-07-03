@@ -45,6 +45,26 @@ class ResultsTest(unittest.TestCase):
     def test_load_missing_file(self):
         self.assertEqual(R.load_results_overlay(path=Path("/nonexistent/x.json")), {})
 
+    def test_apply_results_overlay_fills_only_missing_scores(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "wc_results.json"
+            p.write_text('{"results":{"7":[3,1],"8":[2,0],"9":[5,4]}}', encoding="utf-8")
+
+            rows = [
+                {"match_number": 7, "home_score": None, "away_score": None},
+                {"match_number": 8, "home_score": 1, "away_score": 1},
+                {"match_number": 9, "predictable": 0, "home_score": None, "away_score": None},
+            ]
+
+            self.assertEqual(
+                R.apply_results_overlay(rows, path=p),
+                [
+                    {"match_number": 7, "home_score": 3, "away_score": 1},
+                    {"match_number": 8, "home_score": 1, "away_score": 1},
+                    {"match_number": 9, "predictable": 0, "home_score": None, "away_score": None},
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

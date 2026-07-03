@@ -34,6 +34,671 @@
           "3-0确实可能，但2-0、1-0的合计概率更高，深盘容错不足。"
         ]
       }
+    },
+    "South Africa::Canada": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 73,
+      "prior_matches": [
+        {
+          "team": "South Africa",
+          "opponent": "Canada",
+          "score": "0-1",
+          "possession": 0.44,
+          "shots_for": 8,
+          "shots_against": 14,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛0-1；加拿大下半场闪击,南非全场仅8次射门"
+        },
+        {
+          "team": "Canada",
+          "opponent": "South Africa",
+          "score": "1-0",
+          "possession": 0.56,
+          "shots_for": 14,
+          "shots_against": 8,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛1-0；加拿大下半场闪击,南非全场仅8次射门"
+        }
+      ],
+      "availability_notes": [
+        "MOM：David。",
+        "进球：Canada: David (52)。"
+      ],
+      "tactical_notes": [
+        "加拿大下半场闪击,南非全场仅8次射门。"
+      ],
+      "market_view": {
+        "scoreline_primary": "0-1",
+        "notes": [
+          "32强已完赛比分：South Africa 0-1 Canada。",
+          "技术统计：射门8-14，控球44%-56%。"
+        ]
+      }
+    },
+    "Germany::Paraguay": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 74,
+      "prior_matches": [
+        {
+          "team": "Germany",
+          "opponent": "Paraguay",
+          "score": "1-1",
+          "possession": 0.65,
+          "shots_for": 18,
+          "shots_against": 6,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛1-1，点球 3-4；德国控球65%但仅1球,巴拉圭铁桶阵+点球大战胜出;Almirón红牌停赛但防守极强"
+        },
+        {
+          "team": "Paraguay",
+          "opponent": "Germany",
+          "score": "1-1",
+          "possession": 0.35,
+          "shots_for": 6,
+          "shots_against": 18,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛1-1，点球 3-4；德国控球65%但仅1球,巴拉圭铁桶阵+点球大战胜出;Almirón红牌停赛但防守极强"
+        }
+      ],
+      "availability_notes": [
+        "MOM：Enciso。",
+        "进球：Germany: Musiala (63)；Paraguay: Enciso (78)。"
+      ],
+      "tactical_notes": [
+        "德国控球65%但仅1球,巴拉圭铁桶阵+点球大战胜出;Almirón红牌停赛但防守极强。"
+      ],
+      "market_view": {
+        "scoreline_primary": "1-1",
+        "notes": [
+          "32强已完赛比分：Germany 1-1 Paraguay，点球 3-4。",
+          "技术统计：射门18-6，控球65%-35%。"
+        ]
+      }
+    },
+    "Netherlands::Morocco": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 75,
+      "prior_matches": [
+        {
+          "team": "Netherlands",
+          "opponent": "Morocco",
+          "score": "1-1",
+          "possession": 0.58,
+          "shots_for": 16,
+          "shots_against": 9,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛1-1，点球 2-3；摩洛哥防守反击+点球获胜,延续2022四强底蕴"
+        },
+        {
+          "team": "Morocco",
+          "opponent": "Netherlands",
+          "score": "1-1",
+          "possession": 0.42,
+          "shots_for": 9,
+          "shots_against": 16,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛1-1，点球 2-3；摩洛哥防守反击+点球获胜,延续2022四强底蕴"
+        }
+      ],
+      "availability_notes": [
+        "MOM：El Kaabi。",
+        "进球：Netherlands: Gakpo (55)；Morocco: El Kaabi (72)。"
+      ],
+      "tactical_notes": [
+        "摩洛哥防守反击+点球获胜,延续2022四强底蕴。"
+      ],
+      "market_view": {
+        "scoreline_primary": "1-1",
+        "notes": [
+          "32强已完赛比分：Netherlands 1-1 Morocco，点球 2-3。",
+          "技术统计：射门16-9，控球58%-42%。"
+        ]
+      }
+    },
+    "Brazil::Japan": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 76,
+      "prior_matches": [
+        {
+          "team": "Brazil",
+          "opponent": "Japan",
+          "score": "2-1",
+          "possession": 0.55,
+          "shots_for": 15,
+          "shots_against": 11,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛2-1；巴西进攻效率高但防守有隐患(失1球);日本久保建英缺阵影响进攻"
+        },
+        {
+          "team": "Japan",
+          "opponent": "Brazil",
+          "score": "1-2",
+          "possession": 0.45,
+          "shots_for": 11,
+          "shots_against": 15,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛1-2；巴西进攻效率高但防守有隐患(失1球);日本久保建英缺阵影响进攻"
+        }
+      ],
+      "availability_notes": [
+        "MOM：Vini Jr。",
+        "进球：Brazil: Vini Jr (34), Raphinha (71)；Japan: Mitoma (62)。"
+      ],
+      "tactical_notes": [
+        "巴西进攻效率高但防守有隐患(失1球);日本久保建英缺阵影响进攻。"
+      ],
+      "market_view": {
+        "scoreline_primary": "2-1",
+        "notes": [
+          "32强已完赛比分：Brazil 2-1 Japan。",
+          "技术统计：射门15-11，控球55%-45%。"
+        ]
+      }
+    },
+    "France::Sweden": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 77,
+      "prior_matches": [
+        {
+          "team": "France",
+          "opponent": "Sweden",
+          "score": "3-0",
+          "possession": 0.62,
+          "shots_for": 19,
+          "shots_against": 7,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛3-0；姆巴佩双响(本届6球+世界杯历史18球),法国碾压式胜利;Dembélé出场助攻"
+        },
+        {
+          "team": "Sweden",
+          "opponent": "France",
+          "score": "0-3",
+          "possession": 0.38,
+          "shots_for": 7,
+          "shots_against": 19,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛0-3；姆巴佩双响(本届6球+世界杯历史18球),法国碾压式胜利;Dembélé出场助攻"
+        }
+      ],
+      "availability_notes": [
+        "MOM：Mbappé。",
+        "进球：France: Mbappé (28), Mbappé (56), Barcola (82)。"
+      ],
+      "tactical_notes": [
+        "姆巴佩双响(本届6球+世界杯历史18球),法国碾压式胜利;Dembélé出场助攻。"
+      ],
+      "market_view": {
+        "scoreline_primary": "3-0",
+        "notes": [
+          "32强已完赛比分：France 3-0 Sweden。",
+          "技术统计：射门19-7，控球62%-38%。"
+        ]
+      }
+    },
+    "Ivory Coast::Norway": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 78,
+      "prior_matches": [
+        {
+          "team": "Ivory Coast",
+          "opponent": "Norway",
+          "score": "1-2",
+          "possession": 0.52,
+          "shots_for": 12,
+          "shots_against": 10,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛1-2；哈兰德89分钟绝杀(本届5球),挪威时隔28年重返16强"
+        },
+        {
+          "team": "Norway",
+          "opponent": "Ivory Coast",
+          "score": "2-1",
+          "possession": 0.48,
+          "shots_for": 10,
+          "shots_against": 12,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛2-1；哈兰德89分钟绝杀(本届5球),挪威时隔28年重返16强"
+        }
+      ],
+      "availability_notes": [
+        "MOM：Haaland。",
+        "进球：Ivory Coast: Diallo (67)；Norway: Nussa (44), Haaland (89)。"
+      ],
+      "tactical_notes": [
+        "哈兰德89分钟绝杀(本届5球),挪威时隔28年重返16强。"
+      ],
+      "market_view": {
+        "scoreline_primary": "1-2",
+        "notes": [
+          "32强已完赛比分：Ivory Coast 1-2 Norway。",
+          "技术统计：射门12-10，控球52%-48%。"
+        ]
+      }
+    },
+    "Mexico::Ecuador": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 79,
+      "prior_matches": [
+        {
+          "team": "Mexico",
+          "opponent": "Ecuador",
+          "score": "2-0",
+          "possession": 0.53,
+          "shots_for": 14,
+          "shots_against": 9,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛2-0；墨西哥四战全胜零失球!主场阿兹特克球场疯狂;厄瓜多尔Caicedo染红"
+        },
+        {
+          "team": "Ecuador",
+          "opponent": "Mexico",
+          "score": "0-2",
+          "possession": 0.47,
+          "shots_for": 9,
+          "shots_against": 14,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛0-2；墨西哥四战全胜零失球!主场阿兹特克球场疯狂;厄瓜多尔Caicedo染红"
+        }
+      ],
+      "availability_notes": [
+        "MOM：Lozano。",
+        "进球：Mexico: Lozano (38), Álvarez (75)。"
+      ],
+      "tactical_notes": [
+        "墨西哥四战全胜零失球!主场阿兹特克球场疯狂;厄瓜多尔Caicedo染红。"
+      ],
+      "market_view": {
+        "scoreline_primary": "2-0",
+        "notes": [
+          "32强已完赛比分：Mexico 2-0 Ecuador。",
+          "技术统计：射门14-9，控球53%-47%。"
+        ]
+      }
+    },
+    "England::DR Congo": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 80,
+      "prior_matches": [
+        {
+          "team": "England",
+          "opponent": "DR Congo",
+          "score": "2-1",
+          "possession": 0.61,
+          "shots_for": 17,
+          "shots_against": 8,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛2-1；刚果7分钟闪击,凯恩75-86分钟11分钟内双响逆转绝杀"
+        },
+        {
+          "team": "DR Congo",
+          "opponent": "England",
+          "score": "1-2",
+          "possession": 0.39,
+          "shots_for": 8,
+          "shots_against": 17,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛1-2；刚果7分钟闪击,凯恩75-86分钟11分钟内双响逆转绝杀"
+        }
+      ],
+      "availability_notes": [
+        "MOM：Kane。",
+        "进球：England: Kane (75), Kane (86)；DR Congo: Sipanga (7)。"
+      ],
+      "tactical_notes": [
+        "刚果7分钟闪击,凯恩75-86分钟11分钟内双响逆转绝杀。"
+      ],
+      "market_view": {
+        "scoreline_primary": "2-1",
+        "notes": [
+          "32强已完赛比分：England 2-1 DR Congo。",
+          "技术统计：射门17-8，控球61%-39%。"
+        ]
+      }
+    },
+    "United States::Bosnia and Herzegovina": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 81,
+      "prior_matches": [
+        {
+          "team": "United States",
+          "opponent": "Bosnia and Herzegovina",
+          "score": "2-0",
+          "possession": 0.54,
+          "shots_for": 13,
+          "shots_against": 10,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛2-0；美国被罚下一人仍2-0取胜,东道主全部晋级;Pulisic任意球破门"
+        },
+        {
+          "team": "Bosnia and Herzegovina",
+          "opponent": "United States",
+          "score": "0-2",
+          "possession": 0.46,
+          "shots_for": 10,
+          "shots_against": 13,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛0-2；美国被罚下一人仍2-0取胜,东道主全部晋级;Pulisic任意球破门"
+        }
+      ],
+      "availability_notes": [
+        "MOM：Pulisic。",
+        "进球：United States: Balogun (41), Pulisic (67 FK)。"
+      ],
+      "tactical_notes": [
+        "美国被罚下一人仍2-0取胜,东道主全部晋级;Pulisic任意球破门。"
+      ],
+      "market_view": {
+        "scoreline_primary": "2-0",
+        "notes": [
+          "32强已完赛比分：United States 2-0 Bosnia and Herzegovina。",
+          "技术统计：射门13-10，控球54%-46%。"
+        ]
+      }
+    },
+    "Belgium::Senegal": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 82,
+      "prior_matches": [
+        {
+          "team": "Belgium",
+          "opponent": "Senegal",
+          "score": "3-2",
+          "possession": 0.57,
+          "shots_for": 16,
+          "shots_against": 12,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛3-2；比利时0-2落后→86分钟连扳2球→加时赛点球绝杀!蒂莱曼斯帽子戏法(含点球)"
+        },
+        {
+          "team": "Senegal",
+          "opponent": "Belgium",
+          "score": "2-3",
+          "possession": 0.43,
+          "shots_for": 12,
+          "shots_against": 16,
+          "source": "HTML淘汰赛技术统计",
+          "takeaway": "32强赛2-3；比利时0-2落后→86分钟连扳2球→加时赛点球绝杀!蒂莱曼斯帽子戏法(含点球)"
+        }
+      ],
+      "availability_notes": [
+        "MOM：Tielemans。",
+        "进球：Belgium: Lukaku (86), Tielemans (89), Tielemans (118 pen)；Senegal: Diarra (25), Sarr (51)。"
+      ],
+      "tactical_notes": [
+        "比利时0-2落后→86分钟连扳2球→加时赛点球绝杀!蒂莱曼斯帽子戏法(含点球)。"
+      ],
+      "market_view": {
+        "scoreline_primary": "3-2",
+        "notes": [
+          "32强已完赛比分：Belgium 3-2 Senegal。",
+          "技术统计：射门16-12，控球57%-43%。"
+        ]
+      }
+    },
+    "Portugal::Croatia": {
+      "data_as_of": "2026-07-03",
+      "source": "HTML赛前情报 + fixturedownload正式比分",
+      "match_number": 83,
+      "prior_matches": [
+        {
+          "team": "Portugal",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛1胜2平0负，进6失1，积分5，近三场走势DWD。"
+        },
+        {
+          "team": "Croatia",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛2胜0平1负，进5失5，积分6，近三场走势WLW。"
+        }
+      ],
+      "availability_notes": [
+        "葡萄牙：C罗(40岁)体能管理是关键,可能轮换",
+        "葡萄牙：小组赛0-0平哥伦比亚进攻乏力",
+        "葡萄牙：B费+B席中场控制力强",
+        "克罗地亚：Modrić(40岁)面部骨折戴面具出战",
+        "克罗地亚：小组赛3战2胜表现超预期",
+        "克罗地亚：淘汰赛经验丰富(2018亚军/2022四强)",
+        "克罗地亚：Perišić+Kramaric锋线搭档"
+      ],
+      "tactical_notes": [
+        "两队实力接近。葡萄牙预期进球1.47,克罗地亚预期进球1.43。最可能比分1-1(概率13.0%)。蒙特卡洛模拟(5万次):葡萄牙晋级50.8% vs 克罗地亚晋级49.2%。"
+      ],
+      "market_view": {
+        "primary": "葡萄牙晋级",
+        "scoreline_primary": "1-1",
+        "scoreline_secondary": "2-1",
+        "notes": [
+          "已完赛正式比分：Portugal 2-1 Croatia（feed核对）。",
+          "90分钟胜/平/负：37.1%/27.5%/35.3%。",
+          "晋级概率：葡萄牙 51.0% / 克罗地亚 49.0%。",
+          "期望进球：葡萄牙 1.47，克罗地亚 1.43。"
+        ]
+      },
+      "status": "completed_score_only",
+      "actual_result": {
+        "score": "2-1",
+        "source": "fixturedownload_feed",
+        "detail_level": "score_only"
+      }
+    },
+    "Spain::Austria": {
+      "data_as_of": "2026-07-03",
+      "source": "HTML赛前情报 + fixturedownload正式比分",
+      "match_number": 84,
+      "prior_matches": [
+        {
+          "team": "Spain",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛2胜1平0负，进5失0，积分7，近三场走势DWW。"
+        },
+        {
+          "team": "Austria",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛1胜1平1负，进6失7，积分4，近三场走势WLD。"
+        }
+      ],
+      "availability_notes": [
+        "西班牙：Fermín López因伤缺席",
+        "西班牙：Yamal状态存疑(自4月后未出场)",
+        "西班牙：小组赛5:0零失球防守完美",
+        "西班牙：Morata+Pedri+Gavi中场铁三角",
+        "奥地利：朗尼克高压逼抢体系",
+        "奥地利：R3 3-3平阿尔及利亚防线有漏洞",
+        "奥地利：Baumgartner+Sabitzer核心组合",
+        "奥地利：首次进入淘汰赛经验不足"
+      ],
+      "tactical_notes": [
+        "西班牙实力明显占优。西班牙预期进球1.63,奥地利预期进球1.29。最可能比分1-1(概率12.7%)。蒙特卡洛模拟(5万次):西班牙晋级59.1% vs 奥地利晋级40.9%。"
+      ],
+      "market_view": {
+        "primary": "大2.5",
+        "scoreline_primary": "1-1",
+        "scoreline_secondary": "2-1",
+        "notes": [
+          "已完赛正式比分：Spain 3-0 Austria（feed核对）。",
+          "90分钟胜/平/负：44.0%/27.1%/28.9%。",
+          "晋级概率：西班牙 58.9% / 奥地利 41.1%。",
+          "期望进球：西班牙 1.63，奥地利 1.29。"
+        ]
+      },
+      "status": "completed_score_only",
+      "actual_result": {
+        "score": "3-0",
+        "source": "fixturedownload_feed",
+        "detail_level": "score_only"
+      }
+    },
+    "Switzerland::Algeria": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 85,
+      "prior_matches": [
+        {
+          "team": "Switzerland",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛2胜1平0负，进8失3，积分7，近三场走势DWW。"
+        },
+        {
+          "team": "Algeria",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛1胜1平1负，进7失7，积分4，近三场走势LDW。"
+        }
+      ],
+      "availability_notes": [
+        "瑞士：扎卡+沙奇里经验老道",
+        "瑞士：小组赛7分8:3得失球",
+        "瑞士：Sommer门将稳健",
+        "瑞士：战术纪律严明",
+        "阿尔及利亚：R3 3-3平奥地利进攻能力不俗",
+        "阿尔及利亚：北非技术流+快速反击",
+        "阿尔及利亚：首次淘汰赛",
+        "阿尔及利亚：Atal+Bensebaini边路有威胁"
+      ],
+      "tactical_notes": [
+        "瑞士略占上风。瑞士预期进球1.59,阿尔及利亚预期进球1.32。最可能比分1-1(概率12.8%)。蒙特卡洛模拟(5万次):瑞士晋级56.9% vs 阿尔及利亚晋级43.1%。"
+      ],
+      "market_view": {
+        "primary": "小2.75",
+        "scoreline_primary": "1-1",
+        "scoreline_secondary": "2-1",
+        "notes": [
+          "90分钟胜/平/负：42.3%/27.3%/30.4%。",
+          "晋级概率：瑞士 56.9% / 阿尔及利亚 43.1%。",
+          "期望进球：瑞士 1.59，阿尔及利亚 1.32。"
+        ]
+      }
+    },
+    "Argentina::Cape Verde": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 86,
+      "prior_matches": [
+        {
+          "team": "Argentina",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛3胜0平0负，进8失1，积分9，近三场走势WWW。"
+        },
+        {
+          "team": "Cape Verde",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛0胜3平0负，进2失2，积分3，近三场走势DDD。"
+        }
+      ],
+      "availability_notes": [
+        "阿根廷：Messi左腿肌肉疲劳复出未定(小组赛未出场)",
+        "阿根廷：Nico Paz被要求休息避免风险",
+        "阿根廷：小组赛全胜8:1统治力",
+        "阿根廷：劳塔罗+阿尔瓦雷斯锋线组合",
+        "阿根廷：卫冕冠军+2022冠军底蕴",
+        "佛得角：小组赛3场全平韧性强",
+        "佛得角：人口仅60万最小参赛国",
+        "佛得角：面对阿根廷是巨大挑战",
+        "佛得角：防守型打法+身体对抗"
+      ],
+      "tactical_notes": [
+        "阿根廷实力明显占优。阿根廷预期进球1.83,佛得角预期进球1.21。最可能比分1-1(概率11.9%)。蒙特卡洛模拟(5万次):阿根廷晋级65.2% vs 佛得角晋级34.8%。"
+      ],
+      "market_view": {
+        "primary": "小2.5",
+        "scoreline_primary": "1-1",
+        "scoreline_secondary": "2-1",
+        "notes": [
+          "90分钟胜/平/负：50.5%/25.5%/24.0%。",
+          "晋级概率：阿根廷 65.4% / 佛得角 34.6%。",
+          "期望进球：阿根廷 1.83，佛得角 1.21。"
+        ]
+      }
+    },
+    "Colombia::Ghana": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 87,
+      "prior_matches": [
+        {
+          "team": "Colombia",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛2胜1平0负，进4失1，积分7，近三场走势WDW。"
+        },
+        {
+          "team": "Ghana",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛1胜1平1负，进2失2，积分4，近三场走势WDL。"
+        }
+      ],
+      "availability_notes": [
+        "哥伦比亚：小组赛7分晋级仅失1球防守极强",
+        "哥伦比亚：路易斯·迪亚斯状态出色(小组赛2球)",
+        "哥伦比亚：哥伦比亚淘汰赛经验丰富",
+        "哥伦比亚：Jhon Arias中场发动机",
+        "加纳：小组赛4分防守稳健仅失2球",
+        "加纳：面对哥伦比亚进攻是硬仗",
+        "加纳：非洲球队韧性足",
+        "加纳：Kudus+Ayew攻击线"
+      ],
+      "tactical_notes": [
+        "哥伦比亚实力明显占优。哥伦比亚预期进球1.65,加纳预期进球1.26。最可能比分1-1(概率12.7%)。蒙特卡洛模拟(5万次):哥伦比亚晋级60.0% vs 加纳晋级40.1%。"
+      ],
+      "market_view": {
+        "primary": "双方进球-是",
+        "scoreline_primary": "1-1",
+        "scoreline_secondary": "2-1",
+        "notes": [
+          "90分钟胜/平/负：45.2%/26.9%/27.9%。",
+          "晋级概率：哥伦比亚 59.9% / 加纳 40.1%。",
+          "期望进球：哥伦比亚 1.65，加纳 1.26。"
+        ]
+      }
+    },
+    "Australia::Egypt": {
+      "data_as_of": "2026-07-02",
+      "source": "HTML仪表盘快照",
+      "match_number": 88,
+      "prior_matches": [
+        {
+          "team": "Australia",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛1胜1平1负，进2失2，积分4，近三场走势WLD。"
+        },
+        {
+          "team": "Egypt",
+          "source": "HTML本届聚合",
+          "takeaway": "小组赛1胜2平0负，进5失3，积分5，近三场走势DDD。"
+        }
+      ],
+      "availability_notes": [
+        "澳大利亚：小组赛4分晋级",
+        "澳大利亚：R3 0-0平巴拉圭显示防守组织力",
+        "澳大利亚：身体对抗+定位球是主要武器",
+        "澳大利亚：McGree中场调度",
+        "澳大利亚：淘汰赛经验有限",
+        "埃及：小组赛1胜2平保持不败，5进3失",
+        "埃及：Salah领衔但缺乏进攻支援",
+        "埃及：防守型球队+反击战术",
+        "埃及：门将El Shenawy状态出色"
+      ],
+      "tactical_notes": [
+        "两队实力接近。澳大利亚预期进球1.34,埃及预期进球1.36。最可能比分1-1(概率13.7%)。蒙特卡洛模拟(5万次):澳大利亚晋级49.2% vs 埃及晋级50.7%。"
+      ],
+      "market_view": {
+        "primary": "小2.75",
+        "scoreline_primary": "1-1",
+        "scoreline_secondary": "1-2",
+        "notes": [
+          "90分钟胜/平/负：35.1%/28.8%/36.1%。",
+          "晋级概率：澳大利亚 49.3% / 埃及 50.7%。",
+          "期望进球：澳大利亚 1.34，埃及 1.36。"
+        ]
+      }
     }
   }
 }

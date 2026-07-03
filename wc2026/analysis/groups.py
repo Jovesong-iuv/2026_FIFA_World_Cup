@@ -14,6 +14,7 @@ from __future__ import annotations
 import numpy as np
 
 from wc2026.data.db import get_conn
+from wc2026.data.results import apply_results_overlay
 
 HOSTS = {"Mexico", "Canada", "United States"}
 VALID_GROUPS = [f"Group {c}" for c in "ABCDEFGHIJKL"]
@@ -27,10 +28,11 @@ def load_group_data(model) -> dict:
     """
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT group_name, home_team, away_team, home_score, away_score "
+            "SELECT match_number, group_name, home_team, away_team, home_score, away_score "
             "FROM fixtures WHERE predictable=1 AND group_name IS NOT NULL AND group_name!='' "
             "ORDER BY group_name, date_utc"
         ).fetchall()
+    rows = apply_results_overlay(rows)
     raw: dict = {}
     for r in rows:
         g = r["group_name"]

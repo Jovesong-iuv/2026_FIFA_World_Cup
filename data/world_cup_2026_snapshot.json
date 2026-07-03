@@ -1,0 +1,2562 @@
+{
+  "metadata": {
+    "generated_at": "2026-07-02T17:07:53.589742",
+    "model_version": "v6.0-MC",
+    "model_desc": "Dixon-Coles修正泊松 + 蒙特卡洛50000次模拟 + 实时赛况/伤停/状态修正",
+    "data_timestamp": "2026-07-03",
+    "data_sources": [
+      "FIFA官网",
+      "ESPN",
+      "央视网",
+      "搜狐体育",
+      "新浪体育",
+      "直播吧"
+    ],
+    "total_r32": 16,
+    "r32_completed": 12,
+    "r32_remaining": 4,
+    "source_file": "/Users/iuv/.qoderworkcn/workspace/mqhpa51tumfok14c/outputs/world_cup_2026_v2.html",
+    "normalized_for_project": true,
+    "notes": [
+      "This file keeps a compact, project-friendly snapshot based on the supplied HTML dashboard plus verified fixture results.",
+      "Group-stage scores use project wc_results.json / fixturedownload feed; HTML standings were recomputed from verified scores when derived fields disagreed.",
+      "Round-of-32 scorers, MOM, notes and process stats are extracted from HTML only for score-validated matches."
+    ],
+    "group_stage_source": "project data/wc_results.json validated against fixturedownload feed on 2026-07-02"
+  },
+  "teams": {
+    "ALG": {
+      "team": "Algeria",
+      "team_cn": "阿尔及利亚",
+      "flag": "🇩🇿"
+    },
+    "ARG": {
+      "team": "Argentina",
+      "team_cn": "阿根廷",
+      "flag": "🇦🇷"
+    },
+    "AUS": {
+      "team": "Australia",
+      "team_cn": "澳大利亚",
+      "flag": "🇦🇺"
+    },
+    "AUT": {
+      "team": "Austria",
+      "team_cn": "奥地利",
+      "flag": "🇦🇹"
+    },
+    "BEL": {
+      "team": "Belgium",
+      "team_cn": "比利时",
+      "flag": "🇧🇪"
+    },
+    "BIH": {
+      "team": "Bosnia and Herzegovina",
+      "team_cn": "波黑",
+      "flag": "🇧🇦"
+    },
+    "BRA": {
+      "team": "Brazil",
+      "team_cn": "巴西",
+      "flag": "🇧🇷"
+    },
+    "CAN": {
+      "team": "Canada",
+      "team_cn": "加拿大",
+      "flag": "🇨🇦"
+    },
+    "CIV": {
+      "team": "Ivory Coast",
+      "team_cn": "科特迪瓦",
+      "flag": "🇨🇮"
+    },
+    "COD": {
+      "team": "DR Congo",
+      "team_cn": "民主刚果",
+      "flag": "🇨🇩"
+    },
+    "COL": {
+      "team": "Colombia",
+      "team_cn": "哥伦比亚",
+      "flag": "🇨🇴"
+    },
+    "CPV": {
+      "team": "Cape Verde",
+      "team_cn": "佛得角",
+      "flag": "🇨🇻"
+    },
+    "CRO": {
+      "team": "Croatia",
+      "team_cn": "克罗地亚",
+      "flag": "🇭🇷"
+    },
+    "CUW": {
+      "team": "Curaçao",
+      "team_cn": "库拉索",
+      "flag": "🇨🇼"
+    },
+    "CZE": {
+      "team": "Czech Republic",
+      "team_cn": "捷克",
+      "flag": "🇨🇿"
+    },
+    "ECU": {
+      "team": "Ecuador",
+      "team_cn": "厄瓜多尔",
+      "flag": "🇪🇨"
+    },
+    "EGY": {
+      "team": "Egypt",
+      "team_cn": "埃及",
+      "flag": "🇪🇬"
+    },
+    "ENG": {
+      "team": "England",
+      "team_cn": "英格兰",
+      "flag": "🏴󠁧󠁢󠁥󠁮󠁧󠁿"
+    },
+    "ESP": {
+      "team": "Spain",
+      "team_cn": "西班牙",
+      "flag": "🇪🇸"
+    },
+    "FRA": {
+      "team": "France",
+      "team_cn": "法国",
+      "flag": "🇫🇷"
+    },
+    "GER": {
+      "team": "Germany",
+      "team_cn": "德国",
+      "flag": "🇩🇪"
+    },
+    "GHA": {
+      "team": "Ghana",
+      "team_cn": "加纳",
+      "flag": "🇬🇭"
+    },
+    "HAI": {
+      "team": "Haiti",
+      "team_cn": "海地",
+      "flag": "🇭🇹"
+    },
+    "IRN": {
+      "team": "Iran",
+      "team_cn": "伊朗",
+      "flag": "🇮🇷"
+    },
+    "IRQ": {
+      "team": "Iraq",
+      "team_cn": "伊拉克",
+      "flag": "🇮🇶"
+    },
+    "JOR": {
+      "team": "Jordan",
+      "team_cn": "约旦",
+      "flag": "🇯🇴"
+    },
+    "JPN": {
+      "team": "Japan",
+      "team_cn": "日本",
+      "flag": "🇯🇵"
+    },
+    "KOR": {
+      "team": "South Korea",
+      "team_cn": "韩国",
+      "flag": "🇰🇷"
+    },
+    "KSA": {
+      "team": "Saudi Arabia",
+      "team_cn": "沙特阿拉伯",
+      "flag": "🇸🇦"
+    },
+    "MAR": {
+      "team": "Morocco",
+      "team_cn": "摩洛哥",
+      "flag": "🇲🇦"
+    },
+    "MEX": {
+      "team": "Mexico",
+      "team_cn": "墨西哥",
+      "flag": "🇲🇽"
+    },
+    "NED": {
+      "team": "Netherlands",
+      "team_cn": "荷兰",
+      "flag": "🇳🇱"
+    },
+    "NOR": {
+      "team": "Norway",
+      "team_cn": "挪威",
+      "flag": "🇳🇴"
+    },
+    "NZL": {
+      "team": "New Zealand",
+      "team_cn": "新西兰",
+      "flag": "🇳🇿"
+    },
+    "PAN": {
+      "team": "Panama",
+      "team_cn": "巴拿马",
+      "flag": "🇵🇦"
+    },
+    "PAR": {
+      "team": "Paraguay",
+      "team_cn": "巴拉圭",
+      "flag": "🇵🇾"
+    },
+    "POR": {
+      "team": "Portugal",
+      "team_cn": "葡萄牙",
+      "flag": "🇵🇹"
+    },
+    "QAT": {
+      "team": "Qatar",
+      "team_cn": "卡塔尔",
+      "flag": "🇶🇦"
+    },
+    "RSA": {
+      "team": "South Africa",
+      "team_cn": "南非",
+      "flag": "🇿🇦"
+    },
+    "SCO": {
+      "team": "Scotland",
+      "team_cn": "苏格兰",
+      "flag": "🏴󠁧󠁢󠁳󠁣󠁴󠁿"
+    },
+    "SEN": {
+      "team": "Senegal",
+      "team_cn": "塞内加尔",
+      "flag": "🇸🇳"
+    },
+    "SUI": {
+      "team": "Switzerland",
+      "team_cn": "瑞士",
+      "flag": "🇨🇭"
+    },
+    "SWE": {
+      "team": "Sweden",
+      "team_cn": "瑞典",
+      "flag": "🇸🇪"
+    },
+    "TUN": {
+      "team": "Tunisia",
+      "team_cn": "突尼斯",
+      "flag": "🇹🇳"
+    },
+    "TUR": {
+      "team": "Turkey",
+      "team_cn": "土耳其",
+      "flag": "🇹🇷"
+    },
+    "URU": {
+      "team": "Uruguay",
+      "team_cn": "乌拉圭",
+      "flag": "🇺🇾"
+    },
+    "USA": {
+      "team": "United States",
+      "team_cn": "美国",
+      "flag": "🇺🇸"
+    },
+    "UZB": {
+      "team": "Uzbekistan",
+      "team_cn": "乌兹别克斯坦",
+      "flag": "🇺🇿"
+    }
+  },
+  "group_stage": {
+    "Group A": {
+      "matches": [
+        {
+          "match_number": 1,
+          "home_team": "Mexico",
+          "away_team": "South Africa",
+          "home_cn": "墨西哥",
+          "away_cn": "南非",
+          "score": "2-0",
+          "home_score": 2,
+          "away_score": 0
+        },
+        {
+          "match_number": 2,
+          "home_team": "South Korea",
+          "away_team": "Czech Republic",
+          "home_cn": "韩国",
+          "away_cn": "捷克",
+          "score": "2-1",
+          "home_score": 2,
+          "away_score": 1
+        },
+        {
+          "match_number": 25,
+          "home_team": "Czech Republic",
+          "away_team": "South Africa",
+          "home_cn": "捷克",
+          "away_cn": "南非",
+          "score": "1-1",
+          "home_score": 1,
+          "away_score": 1
+        },
+        {
+          "match_number": 28,
+          "home_team": "Mexico",
+          "away_team": "South Korea",
+          "home_cn": "墨西哥",
+          "away_cn": "韩国",
+          "score": "1-0",
+          "home_score": 1,
+          "away_score": 0
+        },
+        {
+          "match_number": 53,
+          "home_team": "Czech Republic",
+          "away_team": "Mexico",
+          "home_cn": "捷克",
+          "away_cn": "墨西哥",
+          "score": "0-3",
+          "home_score": 0,
+          "away_score": 3
+        },
+        {
+          "match_number": 54,
+          "home_team": "South Africa",
+          "away_team": "South Korea",
+          "home_cn": "南非",
+          "away_cn": "韩国",
+          "score": "1-0",
+          "home_score": 1,
+          "away_score": 0
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "MEX",
+          "team": "Mexico",
+          "team_cn": "墨西哥",
+          "w": 3,
+          "d": 0,
+          "l": 0,
+          "gf": 6,
+          "ga": 0,
+          "gd": 6,
+          "pts": 9,
+          "rank": 1
+        },
+        {
+          "team_code": "RSA",
+          "team": "South Africa",
+          "team_cn": "南非",
+          "w": 1,
+          "d": 1,
+          "l": 1,
+          "gf": 2,
+          "ga": 3,
+          "gd": -1,
+          "pts": 4,
+          "rank": 2
+        },
+        {
+          "team_code": "KOR",
+          "team": "South Korea",
+          "team_cn": "韩国",
+          "w": 1,
+          "d": 0,
+          "l": 2,
+          "gf": 2,
+          "ga": 3,
+          "gd": -1,
+          "pts": 3,
+          "rank": 3
+        },
+        {
+          "team_code": "CZE",
+          "team": "Czech Republic",
+          "team_cn": "捷克",
+          "w": 0,
+          "d": 1,
+          "l": 2,
+          "gf": 2,
+          "ga": 6,
+          "gd": -4,
+          "pts": 1,
+          "rank": 4
+        }
+      ]
+    },
+    "Group B": {
+      "matches": [
+        {
+          "match_number": 3,
+          "home_team": "Canada",
+          "away_team": "Bosnia and Herzegovina",
+          "home_cn": "加拿大",
+          "away_cn": "波黑",
+          "score": "1-1",
+          "home_score": 1,
+          "away_score": 1
+        },
+        {
+          "match_number": 8,
+          "home_team": "Qatar",
+          "away_team": "Switzerland",
+          "home_cn": "卡塔尔",
+          "away_cn": "瑞士",
+          "score": "1-1",
+          "home_score": 1,
+          "away_score": 1
+        },
+        {
+          "match_number": 26,
+          "home_team": "Switzerland",
+          "away_team": "Bosnia and Herzegovina",
+          "home_cn": "瑞士",
+          "away_cn": "波黑",
+          "score": "4-1",
+          "home_score": 4,
+          "away_score": 1
+        },
+        {
+          "match_number": 27,
+          "home_team": "Canada",
+          "away_team": "Qatar",
+          "home_cn": "加拿大",
+          "away_cn": "卡塔尔",
+          "score": "6-0",
+          "home_score": 6,
+          "away_score": 0
+        },
+        {
+          "match_number": 51,
+          "home_team": "Switzerland",
+          "away_team": "Canada",
+          "home_cn": "瑞士",
+          "away_cn": "加拿大",
+          "score": "2-1",
+          "home_score": 2,
+          "away_score": 1
+        },
+        {
+          "match_number": 52,
+          "home_team": "Bosnia and Herzegovina",
+          "away_team": "Qatar",
+          "home_cn": "波黑",
+          "away_cn": "卡塔尔",
+          "score": "3-1",
+          "home_score": 3,
+          "away_score": 1
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "SUI",
+          "team": "Switzerland",
+          "team_cn": "瑞士",
+          "w": 2,
+          "d": 1,
+          "l": 0,
+          "gf": 7,
+          "ga": 3,
+          "gd": 4,
+          "pts": 7,
+          "rank": 1
+        },
+        {
+          "team_code": "CAN",
+          "team": "Canada",
+          "team_cn": "加拿大",
+          "w": 1,
+          "d": 1,
+          "l": 1,
+          "gf": 8,
+          "ga": 3,
+          "gd": 5,
+          "pts": 4,
+          "rank": 2
+        },
+        {
+          "team_code": "BIH",
+          "team": "Bosnia and Herzegovina",
+          "team_cn": "波黑",
+          "w": 1,
+          "d": 1,
+          "l": 1,
+          "gf": 5,
+          "ga": 6,
+          "gd": -1,
+          "pts": 4,
+          "rank": 3
+        },
+        {
+          "team_code": "QAT",
+          "team": "Qatar",
+          "team_cn": "卡塔尔",
+          "w": 0,
+          "d": 1,
+          "l": 2,
+          "gf": 2,
+          "ga": 10,
+          "gd": -8,
+          "pts": 1,
+          "rank": 4
+        }
+      ]
+    },
+    "Group C": {
+      "matches": [
+        {
+          "match_number": 7,
+          "home_team": "Brazil",
+          "away_team": "Morocco",
+          "home_cn": "巴西",
+          "away_cn": "摩洛哥",
+          "score": "1-1",
+          "home_score": 1,
+          "away_score": 1
+        },
+        {
+          "match_number": 5,
+          "home_team": "Haiti",
+          "away_team": "Scotland",
+          "home_cn": "海地",
+          "away_cn": "苏格兰",
+          "score": "0-1",
+          "home_score": 0,
+          "away_score": 1
+        },
+        {
+          "match_number": 30,
+          "home_team": "Scotland",
+          "away_team": "Morocco",
+          "home_cn": "苏格兰",
+          "away_cn": "摩洛哥",
+          "score": "0-1",
+          "home_score": 0,
+          "away_score": 1
+        },
+        {
+          "match_number": 29,
+          "home_team": "Brazil",
+          "away_team": "Haiti",
+          "home_cn": "巴西",
+          "away_cn": "海地",
+          "score": "3-0",
+          "home_score": 3,
+          "away_score": 0
+        },
+        {
+          "match_number": 49,
+          "home_team": "Scotland",
+          "away_team": "Brazil",
+          "home_cn": "苏格兰",
+          "away_cn": "巴西",
+          "score": "0-3",
+          "home_score": 0,
+          "away_score": 3
+        },
+        {
+          "match_number": 50,
+          "home_team": "Morocco",
+          "away_team": "Haiti",
+          "home_cn": "摩洛哥",
+          "away_cn": "海地",
+          "score": "4-2",
+          "home_score": 4,
+          "away_score": 2
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "BRA",
+          "team": "Brazil",
+          "team_cn": "巴西",
+          "w": 2,
+          "d": 1,
+          "l": 0,
+          "gf": 7,
+          "ga": 1,
+          "gd": 6,
+          "pts": 7,
+          "rank": 1
+        },
+        {
+          "team_code": "MAR",
+          "team": "Morocco",
+          "team_cn": "摩洛哥",
+          "w": 2,
+          "d": 1,
+          "l": 0,
+          "gf": 6,
+          "ga": 3,
+          "gd": 3,
+          "pts": 7,
+          "rank": 2
+        },
+        {
+          "team_code": "SCO",
+          "team": "Scotland",
+          "team_cn": "苏格兰",
+          "w": 1,
+          "d": 0,
+          "l": 2,
+          "gf": 1,
+          "ga": 4,
+          "gd": -3,
+          "pts": 3,
+          "rank": 3
+        },
+        {
+          "team_code": "HAI",
+          "team": "Haiti",
+          "team_cn": "海地",
+          "w": 0,
+          "d": 0,
+          "l": 3,
+          "gf": 2,
+          "ga": 8,
+          "gd": -6,
+          "pts": 0,
+          "rank": 4
+        }
+      ]
+    },
+    "Group D": {
+      "matches": [
+        {
+          "match_number": 4,
+          "home_team": "United States",
+          "away_team": "Paraguay",
+          "home_cn": "美国",
+          "away_cn": "巴拉圭",
+          "score": "4-1",
+          "home_score": 4,
+          "away_score": 1
+        },
+        {
+          "match_number": 6,
+          "home_team": "Australia",
+          "away_team": "Turkey",
+          "home_cn": "澳大利亚",
+          "away_cn": "土耳其",
+          "score": "2-0",
+          "home_score": 2,
+          "away_score": 0
+        },
+        {
+          "match_number": 32,
+          "home_team": "United States",
+          "away_team": "Australia",
+          "home_cn": "美国",
+          "away_cn": "澳大利亚",
+          "score": "2-0",
+          "home_score": 2,
+          "away_score": 0
+        },
+        {
+          "match_number": 31,
+          "home_team": "Turkey",
+          "away_team": "Paraguay",
+          "home_cn": "土耳其",
+          "away_cn": "巴拉圭",
+          "score": "0-1",
+          "home_score": 0,
+          "away_score": 1
+        },
+        {
+          "match_number": 59,
+          "home_team": "Turkey",
+          "away_team": "United States",
+          "home_cn": "土耳其",
+          "away_cn": "美国",
+          "score": "3-2",
+          "home_score": 3,
+          "away_score": 2
+        },
+        {
+          "match_number": 60,
+          "home_team": "Paraguay",
+          "away_team": "Australia",
+          "home_cn": "巴拉圭",
+          "away_cn": "澳大利亚",
+          "score": "0-0",
+          "home_score": 0,
+          "away_score": 0
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "USA",
+          "team": "United States",
+          "team_cn": "美国",
+          "w": 2,
+          "d": 0,
+          "l": 1,
+          "gf": 8,
+          "ga": 4,
+          "gd": 4,
+          "pts": 6,
+          "rank": 1
+        },
+        {
+          "team_code": "AUS",
+          "team": "Australia",
+          "team_cn": "澳大利亚",
+          "w": 1,
+          "d": 1,
+          "l": 1,
+          "gf": 2,
+          "ga": 2,
+          "gd": 0,
+          "pts": 4,
+          "rank": 2
+        },
+        {
+          "team_code": "PAR",
+          "team": "Paraguay",
+          "team_cn": "巴拉圭",
+          "w": 1,
+          "d": 1,
+          "l": 1,
+          "gf": 2,
+          "ga": 4,
+          "gd": -2,
+          "pts": 4,
+          "rank": 3
+        },
+        {
+          "team_code": "TUR",
+          "team": "Turkey",
+          "team_cn": "土耳其",
+          "w": 1,
+          "d": 0,
+          "l": 2,
+          "gf": 3,
+          "ga": 5,
+          "gd": -2,
+          "pts": 3,
+          "rank": 4
+        }
+      ]
+    },
+    "Group E": {
+      "matches": [
+        {
+          "match_number": 10,
+          "home_team": "Germany",
+          "away_team": "Curaçao",
+          "home_cn": "德国",
+          "away_cn": "库拉索",
+          "score": "7-1",
+          "home_score": 7,
+          "away_score": 1
+        },
+        {
+          "match_number": 9,
+          "home_team": "Ivory Coast",
+          "away_team": "Ecuador",
+          "home_cn": "科特迪瓦",
+          "away_cn": "厄瓜多尔",
+          "score": "1-0",
+          "home_score": 1,
+          "away_score": 0
+        },
+        {
+          "match_number": 33,
+          "home_team": "Germany",
+          "away_team": "Ivory Coast",
+          "home_cn": "德国",
+          "away_cn": "科特迪瓦",
+          "score": "2-1",
+          "home_score": 2,
+          "away_score": 1
+        },
+        {
+          "match_number": 34,
+          "home_team": "Ecuador",
+          "away_team": "Curaçao",
+          "home_cn": "厄瓜多尔",
+          "away_cn": "库拉索",
+          "score": "0-0",
+          "home_score": 0,
+          "away_score": 0
+        },
+        {
+          "match_number": 55,
+          "home_team": "Curaçao",
+          "away_team": "Ivory Coast",
+          "home_cn": "库拉索",
+          "away_cn": "科特迪瓦",
+          "score": "0-2",
+          "home_score": 0,
+          "away_score": 2
+        },
+        {
+          "match_number": 56,
+          "home_team": "Ecuador",
+          "away_team": "Germany",
+          "home_cn": "厄瓜多尔",
+          "away_cn": "德国",
+          "score": "2-1",
+          "home_score": 2,
+          "away_score": 1
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "GER",
+          "team": "Germany",
+          "team_cn": "德国",
+          "w": 2,
+          "d": 0,
+          "l": 1,
+          "gf": 10,
+          "ga": 4,
+          "gd": 6,
+          "pts": 6,
+          "rank": 1
+        },
+        {
+          "team_code": "CIV",
+          "team": "Ivory Coast",
+          "team_cn": "科特迪瓦",
+          "w": 2,
+          "d": 0,
+          "l": 1,
+          "gf": 4,
+          "ga": 2,
+          "gd": 2,
+          "pts": 6,
+          "rank": 2
+        },
+        {
+          "team_code": "ECU",
+          "team": "Ecuador",
+          "team_cn": "厄瓜多尔",
+          "w": 1,
+          "d": 1,
+          "l": 1,
+          "gf": 2,
+          "ga": 2,
+          "gd": 0,
+          "pts": 4,
+          "rank": 3
+        },
+        {
+          "team_code": "CUW",
+          "team": "Curaçao",
+          "team_cn": "库拉索",
+          "w": 0,
+          "d": 1,
+          "l": 2,
+          "gf": 1,
+          "ga": 9,
+          "gd": -8,
+          "pts": 1,
+          "rank": 4
+        }
+      ]
+    },
+    "Group F": {
+      "matches": [
+        {
+          "match_number": 11,
+          "home_team": "Netherlands",
+          "away_team": "Japan",
+          "home_cn": "荷兰",
+          "away_cn": "日本",
+          "score": "2-2",
+          "home_score": 2,
+          "away_score": 2
+        },
+        {
+          "match_number": 12,
+          "home_team": "Sweden",
+          "away_team": "Tunisia",
+          "home_cn": "瑞典",
+          "away_cn": "突尼斯",
+          "score": "5-1",
+          "home_score": 5,
+          "away_score": 1
+        },
+        {
+          "match_number": 35,
+          "home_team": "Netherlands",
+          "away_team": "Sweden",
+          "home_cn": "荷兰",
+          "away_cn": "瑞典",
+          "score": "5-1",
+          "home_score": 5,
+          "away_score": 1
+        },
+        {
+          "match_number": 36,
+          "home_team": "Tunisia",
+          "away_team": "Japan",
+          "home_cn": "突尼斯",
+          "away_cn": "日本",
+          "score": "0-4",
+          "home_score": 0,
+          "away_score": 4
+        },
+        {
+          "match_number": 57,
+          "home_team": "Japan",
+          "away_team": "Sweden",
+          "home_cn": "日本",
+          "away_cn": "瑞典",
+          "score": "1-1",
+          "home_score": 1,
+          "away_score": 1
+        },
+        {
+          "match_number": 58,
+          "home_team": "Tunisia",
+          "away_team": "Netherlands",
+          "home_cn": "突尼斯",
+          "away_cn": "荷兰",
+          "score": "1-3",
+          "home_score": 1,
+          "away_score": 3
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "NED",
+          "team": "Netherlands",
+          "team_cn": "荷兰",
+          "w": 2,
+          "d": 1,
+          "l": 0,
+          "gf": 10,
+          "ga": 4,
+          "gd": 6,
+          "pts": 7,
+          "rank": 1
+        },
+        {
+          "team_code": "JPN",
+          "team": "Japan",
+          "team_cn": "日本",
+          "w": 1,
+          "d": 2,
+          "l": 0,
+          "gf": 7,
+          "ga": 3,
+          "gd": 4,
+          "pts": 5,
+          "rank": 2
+        },
+        {
+          "team_code": "SWE",
+          "team": "Sweden",
+          "team_cn": "瑞典",
+          "w": 1,
+          "d": 1,
+          "l": 1,
+          "gf": 7,
+          "ga": 7,
+          "gd": 0,
+          "pts": 4,
+          "rank": 3
+        },
+        {
+          "team_code": "TUN",
+          "team": "Tunisia",
+          "team_cn": "突尼斯",
+          "w": 0,
+          "d": 0,
+          "l": 3,
+          "gf": 2,
+          "ga": 12,
+          "gd": -10,
+          "pts": 0,
+          "rank": 4
+        }
+      ]
+    },
+    "Group G": {
+      "matches": [
+        {
+          "match_number": 16,
+          "home_team": "Belgium",
+          "away_team": "Egypt",
+          "home_cn": "比利时",
+          "away_cn": "埃及",
+          "score": "1-1",
+          "home_score": 1,
+          "away_score": 1
+        },
+        {
+          "match_number": 15,
+          "home_team": "Iran",
+          "away_team": "New Zealand",
+          "home_cn": "伊朗",
+          "away_cn": "新西兰",
+          "score": "2-2",
+          "home_score": 2,
+          "away_score": 2
+        },
+        {
+          "match_number": 39,
+          "home_team": "Belgium",
+          "away_team": "Iran",
+          "home_cn": "比利时",
+          "away_cn": "伊朗",
+          "score": "0-0",
+          "home_score": 0,
+          "away_score": 0
+        },
+        {
+          "match_number": 40,
+          "home_team": "New Zealand",
+          "away_team": "Egypt",
+          "home_cn": "新西兰",
+          "away_cn": "埃及",
+          "score": "1-3",
+          "home_score": 1,
+          "away_score": 3
+        },
+        {
+          "match_number": 63,
+          "home_team": "Egypt",
+          "away_team": "Iran",
+          "home_cn": "埃及",
+          "away_cn": "伊朗",
+          "score": "1-1",
+          "home_score": 1,
+          "away_score": 1
+        },
+        {
+          "match_number": 64,
+          "home_team": "New Zealand",
+          "away_team": "Belgium",
+          "home_cn": "新西兰",
+          "away_cn": "比利时",
+          "score": "1-5",
+          "home_score": 1,
+          "away_score": 5
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "BEL",
+          "team": "Belgium",
+          "team_cn": "比利时",
+          "w": 1,
+          "d": 2,
+          "l": 0,
+          "gf": 6,
+          "ga": 2,
+          "gd": 4,
+          "pts": 5,
+          "rank": 1
+        },
+        {
+          "team_code": "EGY",
+          "team": "Egypt",
+          "team_cn": "埃及",
+          "w": 1,
+          "d": 2,
+          "l": 0,
+          "gf": 5,
+          "ga": 3,
+          "gd": 2,
+          "pts": 5,
+          "rank": 2
+        },
+        {
+          "team_code": "IRN",
+          "team": "Iran",
+          "team_cn": "伊朗",
+          "w": 0,
+          "d": 3,
+          "l": 0,
+          "gf": 3,
+          "ga": 3,
+          "gd": 0,
+          "pts": 3,
+          "rank": 3
+        },
+        {
+          "team_code": "NZL",
+          "team": "New Zealand",
+          "team_cn": "新西兰",
+          "w": 0,
+          "d": 1,
+          "l": 2,
+          "gf": 4,
+          "ga": 10,
+          "gd": -6,
+          "pts": 1,
+          "rank": 4
+        }
+      ]
+    },
+    "Group H": {
+      "matches": [
+        {
+          "match_number": 14,
+          "home_team": "Spain",
+          "away_team": "Cape Verde",
+          "home_cn": "西班牙",
+          "away_cn": "佛得角",
+          "score": "0-0",
+          "home_score": 0,
+          "away_score": 0
+        },
+        {
+          "match_number": 13,
+          "home_team": "Saudi Arabia",
+          "away_team": "Uruguay",
+          "home_cn": "沙特阿拉伯",
+          "away_cn": "乌拉圭",
+          "score": "1-1",
+          "home_score": 1,
+          "away_score": 1
+        },
+        {
+          "match_number": 38,
+          "home_team": "Spain",
+          "away_team": "Saudi Arabia",
+          "home_cn": "西班牙",
+          "away_cn": "沙特阿拉伯",
+          "score": "4-0",
+          "home_score": 4,
+          "away_score": 0
+        },
+        {
+          "match_number": 37,
+          "home_team": "Uruguay",
+          "away_team": "Cape Verde",
+          "home_cn": "乌拉圭",
+          "away_cn": "佛得角",
+          "score": "2-2",
+          "home_score": 2,
+          "away_score": 2
+        },
+        {
+          "match_number": 65,
+          "home_team": "Cape Verde",
+          "away_team": "Saudi Arabia",
+          "home_cn": "佛得角",
+          "away_cn": "沙特阿拉伯",
+          "score": "0-0",
+          "home_score": 0,
+          "away_score": 0
+        },
+        {
+          "match_number": 66,
+          "home_team": "Uruguay",
+          "away_team": "Spain",
+          "home_cn": "乌拉圭",
+          "away_cn": "西班牙",
+          "score": "0-1",
+          "home_score": 0,
+          "away_score": 1
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "ESP",
+          "team": "Spain",
+          "team_cn": "西班牙",
+          "w": 2,
+          "d": 1,
+          "l": 0,
+          "gf": 5,
+          "ga": 0,
+          "gd": 5,
+          "pts": 7,
+          "rank": 1
+        },
+        {
+          "team_code": "CPV",
+          "team": "Cape Verde",
+          "team_cn": "佛得角",
+          "w": 0,
+          "d": 3,
+          "l": 0,
+          "gf": 2,
+          "ga": 2,
+          "gd": 0,
+          "pts": 3,
+          "rank": 2
+        },
+        {
+          "team_code": "URU",
+          "team": "Uruguay",
+          "team_cn": "乌拉圭",
+          "w": 0,
+          "d": 2,
+          "l": 1,
+          "gf": 3,
+          "ga": 4,
+          "gd": -1,
+          "pts": 2,
+          "rank": 3
+        },
+        {
+          "team_code": "KSA",
+          "team": "Saudi Arabia",
+          "team_cn": "沙特阿拉伯",
+          "w": 0,
+          "d": 2,
+          "l": 1,
+          "gf": 1,
+          "ga": 5,
+          "gd": -4,
+          "pts": 2,
+          "rank": 4
+        }
+      ]
+    },
+    "Group I": {
+      "matches": [
+        {
+          "match_number": 17,
+          "home_team": "France",
+          "away_team": "Senegal",
+          "home_cn": "法国",
+          "away_cn": "塞内加尔",
+          "score": "3-1",
+          "home_score": 3,
+          "away_score": 1
+        },
+        {
+          "match_number": 18,
+          "home_team": "Iraq",
+          "away_team": "Norway",
+          "home_cn": "伊拉克",
+          "away_cn": "挪威",
+          "score": "1-4",
+          "home_score": 1,
+          "away_score": 4
+        },
+        {
+          "match_number": 42,
+          "home_team": "France",
+          "away_team": "Iraq",
+          "home_cn": "法国",
+          "away_cn": "伊拉克",
+          "score": "3-0",
+          "home_score": 3,
+          "away_score": 0
+        },
+        {
+          "match_number": 41,
+          "home_team": "Norway",
+          "away_team": "Senegal",
+          "home_cn": "挪威",
+          "away_cn": "塞内加尔",
+          "score": "3-2",
+          "home_score": 3,
+          "away_score": 2
+        },
+        {
+          "match_number": 61,
+          "home_team": "Norway",
+          "away_team": "France",
+          "home_cn": "挪威",
+          "away_cn": "法国",
+          "score": "1-4",
+          "home_score": 1,
+          "away_score": 4
+        },
+        {
+          "match_number": 62,
+          "home_team": "Senegal",
+          "away_team": "Iraq",
+          "home_cn": "塞内加尔",
+          "away_cn": "伊拉克",
+          "score": "5-0",
+          "home_score": 5,
+          "away_score": 0
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "FRA",
+          "team": "France",
+          "team_cn": "法国",
+          "w": 3,
+          "d": 0,
+          "l": 0,
+          "gf": 10,
+          "ga": 2,
+          "gd": 8,
+          "pts": 9,
+          "rank": 1
+        },
+        {
+          "team_code": "NOR",
+          "team": "Norway",
+          "team_cn": "挪威",
+          "w": 2,
+          "d": 0,
+          "l": 1,
+          "gf": 8,
+          "ga": 7,
+          "gd": 1,
+          "pts": 6,
+          "rank": 2
+        },
+        {
+          "team_code": "SEN",
+          "team": "Senegal",
+          "team_cn": "塞内加尔",
+          "w": 1,
+          "d": 0,
+          "l": 2,
+          "gf": 8,
+          "ga": 6,
+          "gd": 2,
+          "pts": 3,
+          "rank": 3
+        },
+        {
+          "team_code": "IRQ",
+          "team": "Iraq",
+          "team_cn": "伊拉克",
+          "w": 0,
+          "d": 0,
+          "l": 3,
+          "gf": 1,
+          "ga": 12,
+          "gd": -11,
+          "pts": 0,
+          "rank": 4
+        }
+      ]
+    },
+    "Group J": {
+      "matches": [
+        {
+          "match_number": 19,
+          "home_team": "Argentina",
+          "away_team": "Algeria",
+          "home_cn": "阿根廷",
+          "away_cn": "阿尔及利亚",
+          "score": "3-0",
+          "home_score": 3,
+          "away_score": 0
+        },
+        {
+          "match_number": 20,
+          "home_team": "Austria",
+          "away_team": "Jordan",
+          "home_cn": "奥地利",
+          "away_cn": "约旦",
+          "score": "3-1",
+          "home_score": 3,
+          "away_score": 1
+        },
+        {
+          "match_number": 43,
+          "home_team": "Argentina",
+          "away_team": "Austria",
+          "home_cn": "阿根廷",
+          "away_cn": "奥地利",
+          "score": "2-0",
+          "home_score": 2,
+          "away_score": 0
+        },
+        {
+          "match_number": 44,
+          "home_team": "Jordan",
+          "away_team": "Algeria",
+          "home_cn": "约旦",
+          "away_cn": "阿尔及利亚",
+          "score": "1-2",
+          "home_score": 1,
+          "away_score": 2
+        },
+        {
+          "match_number": 69,
+          "home_team": "Algeria",
+          "away_team": "Austria",
+          "home_cn": "阿尔及利亚",
+          "away_cn": "奥地利",
+          "score": "3-3",
+          "home_score": 3,
+          "away_score": 3
+        },
+        {
+          "match_number": 70,
+          "home_team": "Jordan",
+          "away_team": "Argentina",
+          "home_cn": "约旦",
+          "away_cn": "阿根廷",
+          "score": "1-3",
+          "home_score": 1,
+          "away_score": 3
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "ARG",
+          "team": "Argentina",
+          "team_cn": "阿根廷",
+          "w": 3,
+          "d": 0,
+          "l": 0,
+          "gf": 8,
+          "ga": 1,
+          "gd": 7,
+          "pts": 9,
+          "rank": 1
+        },
+        {
+          "team_code": "AUT",
+          "team": "Austria",
+          "team_cn": "奥地利",
+          "w": 1,
+          "d": 1,
+          "l": 1,
+          "gf": 6,
+          "ga": 6,
+          "gd": 0,
+          "pts": 4,
+          "rank": 2
+        },
+        {
+          "team_code": "ALG",
+          "team": "Algeria",
+          "team_cn": "阿尔及利亚",
+          "w": 1,
+          "d": 1,
+          "l": 1,
+          "gf": 5,
+          "ga": 7,
+          "gd": -2,
+          "pts": 4,
+          "rank": 3
+        },
+        {
+          "team_code": "JOR",
+          "team": "Jordan",
+          "team_cn": "约旦",
+          "w": 0,
+          "d": 0,
+          "l": 3,
+          "gf": 3,
+          "ga": 8,
+          "gd": -5,
+          "pts": 0,
+          "rank": 4
+        }
+      ]
+    },
+    "Group K": {
+      "matches": [
+        {
+          "match_number": 23,
+          "home_team": "Portugal",
+          "away_team": "DR Congo",
+          "home_cn": "葡萄牙",
+          "away_cn": "刚果(金)",
+          "score": "1-1",
+          "home_score": 1,
+          "away_score": 1
+        },
+        {
+          "match_number": 24,
+          "home_team": "Uzbekistan",
+          "away_team": "Colombia",
+          "home_cn": "乌兹别克斯坦",
+          "away_cn": "哥伦比亚",
+          "score": "1-3",
+          "home_score": 1,
+          "away_score": 3
+        },
+        {
+          "match_number": 47,
+          "home_team": "Portugal",
+          "away_team": "Uzbekistan",
+          "home_cn": "葡萄牙",
+          "away_cn": "乌兹别克斯坦",
+          "score": "5-0",
+          "home_score": 5,
+          "away_score": 0
+        },
+        {
+          "match_number": 48,
+          "home_team": "Colombia",
+          "away_team": "DR Congo",
+          "home_cn": "哥伦比亚",
+          "away_cn": "刚果(金)",
+          "score": "1-0",
+          "home_score": 1,
+          "away_score": 0
+        },
+        {
+          "match_number": 71,
+          "home_team": "Colombia",
+          "away_team": "Portugal",
+          "home_cn": "哥伦比亚",
+          "away_cn": "葡萄牙",
+          "score": "0-0",
+          "home_score": 0,
+          "away_score": 0
+        },
+        {
+          "match_number": 72,
+          "home_team": "DR Congo",
+          "away_team": "Uzbekistan",
+          "home_cn": "刚果(金)",
+          "away_cn": "乌兹别克斯坦",
+          "score": "3-1",
+          "home_score": 3,
+          "away_score": 1
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "COL",
+          "team": "Colombia",
+          "team_cn": "哥伦比亚",
+          "w": 2,
+          "d": 1,
+          "l": 0,
+          "gf": 4,
+          "ga": 1,
+          "gd": 3,
+          "pts": 7,
+          "rank": 1
+        },
+        {
+          "team_code": "POR",
+          "team": "Portugal",
+          "team_cn": "葡萄牙",
+          "w": 1,
+          "d": 2,
+          "l": 0,
+          "gf": 6,
+          "ga": 1,
+          "gd": 5,
+          "pts": 5,
+          "rank": 2
+        },
+        {
+          "team_code": "COD",
+          "team": "DR Congo",
+          "team_cn": "刚果(金)",
+          "w": 1,
+          "d": 1,
+          "l": 1,
+          "gf": 4,
+          "ga": 3,
+          "gd": 1,
+          "pts": 4,
+          "rank": 3
+        },
+        {
+          "team_code": "UZB",
+          "team": "Uzbekistan",
+          "team_cn": "乌兹别克斯坦",
+          "w": 0,
+          "d": 0,
+          "l": 3,
+          "gf": 2,
+          "ga": 11,
+          "gd": -9,
+          "pts": 0,
+          "rank": 4
+        }
+      ]
+    },
+    "Group L": {
+      "matches": [
+        {
+          "match_number": 22,
+          "home_team": "England",
+          "away_team": "Croatia",
+          "home_cn": "英格兰",
+          "away_cn": "克罗地亚",
+          "score": "4-2",
+          "home_score": 4,
+          "away_score": 2
+        },
+        {
+          "match_number": 21,
+          "home_team": "Ghana",
+          "away_team": "Panama",
+          "home_cn": "加纳",
+          "away_cn": "巴拿马",
+          "score": "1-0",
+          "home_score": 1,
+          "away_score": 0
+        },
+        {
+          "match_number": 45,
+          "home_team": "England",
+          "away_team": "Ghana",
+          "home_cn": "英格兰",
+          "away_cn": "加纳",
+          "score": "0-0",
+          "home_score": 0,
+          "away_score": 0
+        },
+        {
+          "match_number": 46,
+          "home_team": "Panama",
+          "away_team": "Croatia",
+          "home_cn": "巴拿马",
+          "away_cn": "克罗地亚",
+          "score": "0-1",
+          "home_score": 0,
+          "away_score": 1
+        },
+        {
+          "match_number": 67,
+          "home_team": "Panama",
+          "away_team": "England",
+          "home_cn": "巴拿马",
+          "away_cn": "英格兰",
+          "score": "0-2",
+          "home_score": 0,
+          "away_score": 2
+        },
+        {
+          "match_number": 68,
+          "home_team": "Croatia",
+          "away_team": "Ghana",
+          "home_cn": "克罗地亚",
+          "away_cn": "加纳",
+          "score": "2-1",
+          "home_score": 2,
+          "away_score": 1
+        }
+      ],
+      "standings": [
+        {
+          "team_code": "ENG",
+          "team": "England",
+          "team_cn": "英格兰",
+          "w": 2,
+          "d": 1,
+          "l": 0,
+          "gf": 6,
+          "ga": 2,
+          "gd": 4,
+          "pts": 7,
+          "rank": 1
+        },
+        {
+          "team_code": "CRO",
+          "team": "Croatia",
+          "team_cn": "克罗地亚",
+          "w": 2,
+          "d": 0,
+          "l": 1,
+          "gf": 5,
+          "ga": 5,
+          "gd": 0,
+          "pts": 6,
+          "rank": 2
+        },
+        {
+          "team_code": "GHA",
+          "team": "Ghana",
+          "team_cn": "加纳",
+          "w": 1,
+          "d": 1,
+          "l": 1,
+          "gf": 2,
+          "ga": 2,
+          "gd": 0,
+          "pts": 4,
+          "rank": 3
+        },
+        {
+          "team_code": "PAN",
+          "team": "Panama",
+          "team_cn": "巴拿马",
+          "w": 0,
+          "d": 0,
+          "l": 3,
+          "gf": 0,
+          "ga": 4,
+          "gd": -4,
+          "pts": 0,
+          "rank": 4
+        }
+      ]
+    }
+  },
+  "round_of_32": {
+    "completed": [
+      {
+        "match_number": 73,
+        "date": "2026-06-28",
+        "venue": "Inglewood",
+        "home_code": "RSA",
+        "away_code": "CAN",
+        "home_team": "South Africa",
+        "away_team": "Canada",
+        "score": "0-1",
+        "home_score": 0,
+        "away_score": 1,
+        "penalties": null,
+        "scorers": {
+          "Canada": [
+            "David (52)"
+          ]
+        },
+        "stats": {
+          "home_shots": 8,
+          "away_shots": 14,
+          "home_poss": 44,
+          "away_poss": 56,
+          "home_fouls": 12,
+          "away_fouls": 9
+        },
+        "mom": "David",
+        "key_note": "加拿大下半场闪击,南非全场仅8次射门"
+      },
+      {
+        "match_number": 74,
+        "date": "2026-06-29",
+        "venue": "Foxborough",
+        "home_code": "GER",
+        "away_code": "PAR",
+        "home_team": "Germany",
+        "away_team": "Paraguay",
+        "score": "1-1",
+        "home_score": 1,
+        "away_score": 1,
+        "penalties": "3-4",
+        "scorers": {
+          "Germany": [
+            "Musiala (63)"
+          ],
+          "Paraguay": [
+            "Enciso (78)"
+          ]
+        },
+        "stats": {
+          "home_shots": 18,
+          "away_shots": 6,
+          "home_poss": 65,
+          "away_poss": 35,
+          "home_fouls": 10,
+          "away_fouls": 16
+        },
+        "mom": "Enciso",
+        "key_note": "德国控球65%但仅1球,巴拉圭铁桶阵+点球大战胜出;Almirón红牌停赛但防守极强"
+      },
+      {
+        "match_number": 75,
+        "date": "2026-06-29",
+        "venue": "Guadalupe",
+        "home_code": "NED",
+        "away_code": "MAR",
+        "home_team": "Netherlands",
+        "away_team": "Morocco",
+        "score": "1-1",
+        "home_score": 1,
+        "away_score": 1,
+        "penalties": "2-3",
+        "scorers": {
+          "Netherlands": [
+            "Gakpo (55)"
+          ],
+          "Morocco": [
+            "El Kaabi (72)"
+          ]
+        },
+        "stats": {
+          "home_shots": 16,
+          "away_shots": 9,
+          "home_poss": 58,
+          "away_poss": 42,
+          "home_fouls": 11,
+          "away_fouls": 14
+        },
+        "mom": "El Kaabi",
+        "key_note": "摩洛哥防守反击+点球获胜,延续2022四强底蕴"
+      },
+      {
+        "match_number": 76,
+        "date": "2026-06-29",
+        "venue": "Houston",
+        "home_code": "BRA",
+        "away_code": "JPN",
+        "home_team": "Brazil",
+        "away_team": "Japan",
+        "score": "2-1",
+        "home_score": 2,
+        "away_score": 1,
+        "penalties": null,
+        "scorers": {
+          "Brazil": [
+            "Vini Jr (34)",
+            "Raphinha (71)"
+          ],
+          "Japan": [
+            "Mitoma (62)"
+          ]
+        },
+        "stats": {
+          "home_shots": 15,
+          "away_shots": 11,
+          "home_poss": 55,
+          "away_poss": 45,
+          "home_fouls": 8,
+          "away_fouls": 13
+        },
+        "mom": "Vini Jr",
+        "key_note": "巴西进攻效率高但防守有隐患(失1球);日本久保建英缺阵影响进攻"
+      },
+      {
+        "match_number": 77,
+        "date": "2026-06-30",
+        "venue": "East Rutherford",
+        "home_code": "FRA",
+        "away_code": "SWE",
+        "home_team": "France",
+        "away_team": "Sweden",
+        "score": "3-0",
+        "home_score": 3,
+        "away_score": 0,
+        "penalties": null,
+        "scorers": {
+          "France": [
+            "Mbappé (28)",
+            "Mbappé (56)",
+            "Barcola (82)"
+          ]
+        },
+        "stats": {
+          "home_shots": 19,
+          "away_shots": 7,
+          "home_poss": 62,
+          "away_poss": 38,
+          "home_fouls": 6,
+          "away_fouls": 15
+        },
+        "mom": "Mbappé",
+        "key_note": "姆巴佩双响(本届6球+世界杯历史18球),法国碾压式胜利;Dembélé出场助攻"
+      },
+      {
+        "match_number": 78,
+        "date": "2026-06-30",
+        "venue": "Arlington",
+        "home_code": "CIV",
+        "away_code": "NOR",
+        "home_team": "Ivory Coast",
+        "away_team": "Norway",
+        "score": "1-2",
+        "home_score": 1,
+        "away_score": 2,
+        "penalties": null,
+        "scorers": {
+          "Ivory Coast": [
+            "Diallo (67)"
+          ],
+          "Norway": [
+            "Nussa (44)",
+            "Haaland (89)"
+          ]
+        },
+        "stats": {
+          "home_shots": 12,
+          "away_shots": 10,
+          "home_poss": 52,
+          "away_poss": 48,
+          "home_fouls": 14,
+          "away_fouls": 11
+        },
+        "mom": "Haaland",
+        "key_note": "哈兰德89分钟绝杀(本届5球),挪威时隔28年重返16强"
+      },
+      {
+        "match_number": 79,
+        "date": "2026-06-30",
+        "venue": "Mexico City",
+        "home_code": "MEX",
+        "away_code": "ECU",
+        "home_team": "Mexico",
+        "away_team": "Ecuador",
+        "score": "2-0",
+        "home_score": 2,
+        "away_score": 0,
+        "penalties": null,
+        "scorers": {
+          "Mexico": [
+            "Lozano (38)",
+            "Álvarez (75)"
+          ]
+        },
+        "stats": {
+          "home_shots": 14,
+          "away_shots": 9,
+          "home_poss": 53,
+          "away_poss": 47,
+          "home_fouls": 10,
+          "away_fouls": 12
+        },
+        "mom": "Lozano",
+        "key_note": "墨西哥四战全胜零失球!主场阿兹特克球场疯狂;厄瓜多尔Caicedo染红"
+      },
+      {
+        "match_number": 80,
+        "date": "2026-07-01",
+        "venue": "Atlanta",
+        "home_code": "ENG",
+        "away_code": "COD",
+        "home_team": "England",
+        "away_team": "DR Congo",
+        "score": "2-1",
+        "home_score": 2,
+        "away_score": 1,
+        "penalties": null,
+        "scorers": {
+          "England": [
+            "Kane (75)",
+            "Kane (86)"
+          ],
+          "DR Congo": [
+            "Sipanga (7)"
+          ]
+        },
+        "stats": {
+          "home_shots": 17,
+          "away_shots": 8,
+          "home_poss": 61,
+          "away_poss": 39,
+          "home_fouls": 9,
+          "away_fouls": 14
+        },
+        "mom": "Kane",
+        "key_note": "刚果7分钟闪击,凯恩75-86分钟11分钟内双响逆转绝杀"
+      },
+      {
+        "match_number": 81,
+        "date": "2026-07-01",
+        "venue": "Santa Clara",
+        "home_code": "USA",
+        "away_code": "BIH",
+        "home_team": "United States",
+        "away_team": "Bosnia and Herzegovina",
+        "score": "2-0",
+        "home_score": 2,
+        "away_score": 0,
+        "penalties": null,
+        "scorers": {
+          "United States": [
+            "Balogun (41)",
+            "Pulisic (67 FK)"
+          ]
+        },
+        "stats": {
+          "home_shots": 13,
+          "away_shots": 10,
+          "home_poss": 54,
+          "away_poss": 46,
+          "home_fouls": 15,
+          "away_fouls": 8
+        },
+        "mom": "Pulisic",
+        "key_note": "美国被罚下一人仍2-0取胜,东道主全部晋级;Pulisic任意球破门"
+      },
+      {
+        "match_number": 82,
+        "date": "2026-07-01",
+        "venue": "Seattle",
+        "home_code": "BEL",
+        "away_code": "SEN",
+        "home_team": "Belgium",
+        "away_team": "Senegal",
+        "score": "3-2",
+        "home_score": 3,
+        "away_score": 2,
+        "penalties": null,
+        "scorers": {
+          "Belgium": [
+            "Lukaku (86)",
+            "Tielemans (89)",
+            "Tielemans (118 pen)"
+          ],
+          "Senegal": [
+            "Diarra (25)",
+            "Sarr (51)"
+          ]
+        },
+        "stats": {
+          "home_shots": 16,
+          "away_shots": 12,
+          "home_poss": 57,
+          "away_poss": 43,
+          "home_fouls": 10,
+          "away_fouls": 15
+        },
+        "mom": "Tielemans",
+        "key_note": "比利时0-2落后→86分钟连扳2球→加时赛点球绝杀!蒂莱曼斯帽子戏法(含点球)"
+      },
+      {
+        "match_number": 83,
+        "date": "2026-07-02",
+        "venue": "Toronto Stadium",
+        "home_code": "POR",
+        "away_code": "CRO",
+        "home_team": "Portugal",
+        "away_team": "Croatia",
+        "score": "2-1",
+        "home_score": 2,
+        "away_score": 1,
+        "penalties": null,
+        "scorers": {},
+        "stats": {},
+        "mom": null,
+        "key_note": "正式比分已核对；球员进球、MOM、技术统计待可靠来源补充。",
+        "detail_status": "score_only",
+        "score_source": "fixturedownload_feed"
+      },
+      {
+        "match_number": 84,
+        "date": "2026-07-02",
+        "venue": "Los Angeles Stadium",
+        "home_code": "ESP",
+        "away_code": "AUT",
+        "home_team": "Spain",
+        "away_team": "Austria",
+        "score": "3-0",
+        "home_score": 3,
+        "away_score": 0,
+        "penalties": null,
+        "scorers": {},
+        "stats": {},
+        "mom": null,
+        "key_note": "正式比分已核对；球员进球、MOM、技术统计待可靠来源补充。",
+        "detail_status": "score_only",
+        "score_source": "fixturedownload_feed"
+      }
+    ],
+    "upcoming": [
+      {
+        "match_number": 85,
+        "date": "2026-07-02",
+        "venue": "Vancouver",
+        "home_code": "SUI",
+        "away_code": "ALG",
+        "home_team": "Switzerland",
+        "away_team": "Algeria",
+        "expected_goals": {
+          "home": 1.5873,
+          "away": 1.3198,
+          "total": 2.9071
+        },
+        "probabilities_90min": {
+          "hw": 0.4232,
+          "dr": 0.2725,
+          "aw": 0.3043,
+          "top3": [
+            {
+              "score": "1-1",
+              "prob": 0.1282
+            },
+            {
+              "score": "2-1",
+              "prob": 0.0909
+            },
+            {
+              "score": "1-2",
+              "prob": 0.0756
+            }
+          ]
+        },
+        "advancement": {
+          "home": 0.5691,
+          "away": 0.4309
+        },
+        "top_bets": [
+          {
+            "name": "小2.75",
+            "type": "u275",
+            "prob_struct": "全赢20.0%|半赢24.5%|半输22.4%|全输33.2%",
+            "ev": 0.074,
+            "model_prob": 0.5564,
+            "fair_odds": 1.8,
+            "market_odds": 1.93,
+            "recommended": true
+          },
+          {
+            "name": "大2.5",
+            "type": "o25",
+            "prob_struct": "胜55.5% | 负44.5%",
+            "ev": 0.072,
+            "model_prob": 0.5555,
+            "fair_odds": 1.8,
+            "market_odds": 1.93,
+            "recommended": true
+          },
+          {
+            "name": "双方进球-是",
+            "type": "btts_y",
+            "prob_struct": "是80.0% | 否20.0%",
+            "ev": 0.072,
+            "model_prob": 0.8002,
+            "fair_odds": 1.25,
+            "market_odds": 1.34,
+            "recommended": true
+          },
+          {
+            "name": "平局",
+            "type": "draw",
+            "prob_struct": "胜27.3%",
+            "ev": 0.071,
+            "model_prob": 0.2725,
+            "fair_odds": 3.67,
+            "market_odds": 3.93,
+            "recommended": true
+          },
+          {
+            "name": "阿尔及利亚独赢",
+            "type": "1x2_a",
+            "prob_struct": "胜30.4%",
+            "ev": 0.071,
+            "model_prob": 0.3043,
+            "fair_odds": 3.29,
+            "market_odds": 3.52,
+            "recommended": true
+          }
+        ],
+        "intelligence": {
+          "home": [
+            "扎卡+沙奇里经验老道",
+            "小组赛7分8:3得失球",
+            "Sommer门将稳健",
+            "战术纪律严明"
+          ],
+          "away": [
+            "R3 3-3平奥地利进攻能力不俗",
+            "北非技术流+快速反击",
+            "首次淘汰赛",
+            "Atal+Bensebaini边路有威胁"
+          ]
+        },
+        "summary": "瑞士略占上风。瑞士预期进球1.59,阿尔及利亚预期进球1.32。最可能比分1-1(概率12.8%)。蒙特卡洛模拟(5万次):瑞士晋级56.9% vs 阿尔及利亚晋级43.1%。"
+      },
+      {
+        "match_number": 86,
+        "date": "2026-07-03",
+        "venue": "Miami Gardens",
+        "home_code": "ARG",
+        "away_code": "CPV",
+        "home_team": "Argentina",
+        "away_team": "Cape Verde",
+        "expected_goals": {
+          "home": 1.8251,
+          "away": 1.2101,
+          "total": 3.0352
+        },
+        "probabilities_90min": {
+          "hw": 0.5049,
+          "dr": 0.255,
+          "aw": 0.2401,
+          "top3": [
+            {
+              "score": "1-1",
+              "prob": 0.119
+            },
+            {
+              "score": "2-1",
+              "prob": 0.0969
+            },
+            {
+              "score": "2-0",
+              "prob": 0.0801
+            }
+          ]
+        },
+        "advancement": {
+          "home": 0.6542,
+          "away": 0.3458
+        },
+        "top_bets": [
+          {
+            "name": "小2.5",
+            "type": "u25",
+            "prob_struct": "胜41.6% | 负58.4%",
+            "ev": 0.072,
+            "model_prob": 0.4156,
+            "fair_odds": 2.41,
+            "market_odds": 2.58,
+            "recommended": true
+          },
+          {
+            "name": "大2.75",
+            "type": "o275",
+            "prob_struct": "全赢36.0%|半赢22.4%|半输23.4%|全输18.1%",
+            "ev": 0.072,
+            "model_prob": 0.4723,
+            "fair_odds": 2.12,
+            "market_odds": 2.27,
+            "recommended": true
+          },
+          {
+            "name": "小2.75",
+            "type": "u275",
+            "prob_struct": "全赢18.1%|半赢23.4%|半输22.4%|全输36.0%",
+            "ev": 0.071,
+            "model_prob": 0.5277,
+            "fair_odds": 1.9,
+            "market_odds": 2.03,
+            "recommended": true
+          },
+          {
+            "name": "阿根廷独赢",
+            "type": "1x2_h",
+            "prob_struct": "胜50.5%",
+            "ev": 0.07,
+            "model_prob": 0.5049,
+            "fair_odds": 1.98,
+            "market_odds": 2.12,
+            "recommended": true
+          },
+          {
+            "name": "比分2-1",
+            "type": "cs",
+            "prob_struct": "概率9.7%",
+            "ev": 0.07,
+            "model_prob": 0.0969,
+            "fair_odds": 10.32,
+            "market_odds": 11.04,
+            "recommended": true
+          }
+        ],
+        "intelligence": {
+          "home": [
+            "Messi左腿肌肉疲劳复出未定(小组赛未出场)",
+            "Nico Paz被要求休息避免风险",
+            "小组赛全胜8:1统治力",
+            "劳塔罗+阿尔瓦雷斯锋线组合",
+            "卫冕冠军+2022冠军底蕴"
+          ],
+          "away": [
+            "小组赛3场全平韧性强",
+            "人口仅60万最小参赛国",
+            "面对阿根廷是巨大挑战",
+            "防守型打法+身体对抗"
+          ]
+        },
+        "summary": "阿根廷实力明显占优。阿根廷预期进球1.83,佛得角预期进球1.21。最可能比分1-1(概率11.9%)。蒙特卡洛模拟(5万次):阿根廷晋级65.2% vs 佛得角晋级34.8%。"
+      },
+      {
+        "match_number": 87,
+        "date": "2026-07-03",
+        "venue": "Kansas City",
+        "home_code": "COL",
+        "away_code": "GHA",
+        "home_team": "Colombia",
+        "away_team": "Ghana",
+        "expected_goals": {
+          "home": 1.6525,
+          "away": 1.2631,
+          "total": 2.9156
+        },
+        "probabilities_90min": {
+          "hw": 0.4516,
+          "dr": 0.2691,
+          "aw": 0.2793,
+          "top3": [
+            {
+              "score": "1-1",
+              "prob": 0.1267
+            },
+            {
+              "score": "2-1",
+              "prob": 0.0935
+            },
+            {
+              "score": "1-0",
+              "prob": 0.076
+            }
+          ]
+        },
+        "advancement": {
+          "home": 0.5988,
+          "away": 0.4012
+        },
+        "top_bets": [
+          {
+            "name": "双方进球-是",
+            "type": "btts_y",
+            "prob_struct": "是80.1% | 否19.9%",
+            "ev": 0.074,
+            "model_prob": 0.8014,
+            "fair_odds": 1.25,
+            "market_odds": 1.34,
+            "recommended": true
+          },
+          {
+            "name": "哥伦比亚晋级",
+            "type": "adv_h",
+            "prob_struct": "胜60.0%",
+            "ev": 0.073,
+            "model_prob": 0.5995,
+            "fair_odds": 1.67,
+            "market_odds": 1.79,
+            "recommended": true
+          },
+          {
+            "name": "平局",
+            "type": "draw",
+            "prob_struct": "胜26.9%",
+            "ev": 0.071,
+            "model_prob": 0.2691,
+            "fair_odds": 3.72,
+            "market_odds": 3.98,
+            "recommended": true
+          },
+          {
+            "name": "小2.5",
+            "type": "u25",
+            "prob_struct": "胜44.2% | 负55.8%",
+            "ev": 0.071,
+            "model_prob": 0.4425,
+            "fair_odds": 2.26,
+            "market_odds": 2.42,
+            "recommended": true
+          },
+          {
+            "name": "加纳独赢",
+            "type": "1x2_a",
+            "prob_struct": "胜27.9%",
+            "ev": 0.07,
+            "model_prob": 0.2793,
+            "fair_odds": 3.58,
+            "market_odds": 3.83,
+            "recommended": true
+          }
+        ],
+        "intelligence": {
+          "home": [
+            "小组赛7分晋级仅失1球防守极强",
+            "路易斯·迪亚斯状态出色(小组赛2球)",
+            "哥伦比亚淘汰赛经验丰富",
+            "Jhon Arias中场发动机"
+          ],
+          "away": [
+            "小组赛4分防守稳健仅失2球",
+            "面对哥伦比亚进攻是硬仗",
+            "非洲球队韧性足",
+            "Kudus+Ayew攻击线"
+          ]
+        },
+        "summary": "哥伦比亚实力明显占优。哥伦比亚预期进球1.65,加纳预期进球1.26。最可能比分1-1(概率12.7%)。蒙特卡洛模拟(5万次):哥伦比亚晋级60.0% vs 加纳晋级40.1%。"
+      },
+      {
+        "match_number": 88,
+        "date": "2026-07-03",
+        "venue": "Arlington",
+        "home_code": "AUS",
+        "away_code": "EGY",
+        "home_team": "Australia",
+        "away_team": "Egypt",
+        "expected_goals": {
+          "home": 1.3387,
+          "away": 1.3613,
+          "total": 2.7
+        },
+        "probabilities_90min": {
+          "hw": 0.351,
+          "dr": 0.2876,
+          "aw": 0.3614,
+          "top3": [
+            {
+              "score": "1-1",
+              "prob": 0.1372
+            },
+            {
+              "score": "1-2",
+              "prob": 0.0834
+            },
+            {
+              "score": "2-1",
+              "prob": 0.082
+            }
+          ]
+        },
+        "advancement": {
+          "home": 0.4933,
+          "away": 0.5067
+        },
+        "top_bets": [
+          {
+            "name": "小2.75",
+            "type": "u275",
+            "prob_struct": "全赢23.4%|半赢26.0%|半输22.1%|全输28.6%",
+            "ev": 0.075,
+            "model_prob": 0.604,
+            "fair_odds": 1.66,
+            "market_odds": 1.78,
+            "recommended": true
+          },
+          {
+            "name": "大2.5",
+            "type": "o25",
+            "prob_struct": "胜50.6% | 负49.4%",
+            "ev": 0.073,
+            "model_prob": 0.5063,
+            "fair_odds": 1.98,
+            "market_odds": 2.12,
+            "recommended": true
+          },
+          {
+            "name": "大2.75",
+            "type": "o275",
+            "prob_struct": "全赢28.6%|半赢22.1%|半输26.0%|全输23.4%",
+            "ev": 0.073,
+            "model_prob": 0.396,
+            "fair_odds": 2.53,
+            "market_odds": 2.71,
+            "recommended": true
+          },
+          {
+            "name": "双方进球-是",
+            "type": "btts_y",
+            "prob_struct": "是76.6% | 否23.4%",
+            "ev": 0.072,
+            "model_prob": 0.766,
+            "fair_odds": 1.31,
+            "market_odds": 1.4,
+            "recommended": true
+          },
+          {
+            "name": "澳大利亚独赢",
+            "type": "1x2_h",
+            "prob_struct": "胜35.1%",
+            "ev": 0.071,
+            "model_prob": 0.351,
+            "fair_odds": 2.85,
+            "market_odds": 3.05,
+            "recommended": true
+          }
+        ],
+        "intelligence": {
+          "home": [
+            "小组赛4分晋级",
+            "R3 0-0平巴拉圭显示防守组织力",
+            "身体对抗+定位球是主要武器",
+            "McGree中场调度",
+            "淘汰赛经验有限"
+          ],
+          "away": [
+            "小组赛1胜2平保持不败，5进3失",
+            "Salah领衔但缺乏进攻支援",
+            "防守型球队+反击战术",
+            "门将El Shenawy状态出色"
+          ]
+        },
+        "summary": "两队实力接近。澳大利亚预期进球1.34,埃及预期进球1.36。最可能比分1-1(概率13.7%)。蒙特卡洛模拟(5万次):澳大利亚晋级49.2% vs 埃及晋级50.7%。"
+      }
+    ]
+  },
+  "round_of_16": [
+    {
+      "match_number": 89,
+      "date": "2026-07-04",
+      "venue": "Philadelphia",
+      "home": "PAR",
+      "away": "FRA",
+      "home_cn": "巴拉圭",
+      "away_cn": "法国",
+      "status": "upcoming",
+      "note": "巴拉圭点球淘汰德国,法国3-0碾压瑞典"
+    },
+    {
+      "match_number": 90,
+      "date": "2026-07-04",
+      "venue": "Houston",
+      "home": "CAN",
+      "away": "MAR",
+      "home_cn": "加拿大",
+      "away_cn": "摩洛哥",
+      "status": "upcoming",
+      "note": "加拿大淘汰赛经验增长,摩洛哥点球胜荷兰+2022四强底蕴"
+    },
+    {
+      "match_number": 91,
+      "date": "2026-07-05",
+      "venue": "East Rutherford",
+      "home": "BRA",
+      "away": "NOR",
+      "home_cn": "巴西",
+      "away_cn": "挪威",
+      "status": "upcoming",
+      "note": "巴西2-1胜日本,哈兰德89分钟绝杀助挪威晋级"
+    },
+    {
+      "match_number": 92,
+      "date": "2026-07-05",
+      "venue": "Mexico City",
+      "home": "MEX",
+      "away": "ENG",
+      "home_cn": "墨西哥",
+      "away_cn": "英格兰",
+      "status": "upcoming",
+      "note": "墨西哥4战0失球vs凯恩双响英格兰,东道主主场"
+    },
+    {
+      "match_number": 93,
+      "date": "2026-07-06",
+      "venue": "Arlington",
+      "home": "winner_83",
+      "away": "winner_84",
+      "home_cn": "葡萄牙/克罗地亚",
+      "away_cn": "西班牙/奥地利",
+      "status": "upcoming",
+      "note": "C罗vs魔笛最后一舞? 西班牙零失球防守完美"
+    },
+    {
+      "match_number": 94,
+      "date": "2026-07-06",
+      "venue": "Seattle",
+      "home": "USA",
+      "away": "BEL",
+      "home_cn": "美国",
+      "away_cn": "比利时",
+      "status": "upcoming",
+      "note": "美国10人仍2-0胜波黑,比利时0-2落后逆转加时绝杀"
+    },
+    {
+      "match_number": 95,
+      "date": "2026-07-07",
+      "venue": "Atlanta",
+      "home": "winner_86",
+      "away": "winner_88",
+      "home_cn": "阿根廷/佛得角",
+      "away_cn": "澳大利亚/埃及",
+      "status": "upcoming",
+      "note": "阿根廷卫冕冠军vs人口最小国家;澳大利亚vs埃及"
+    },
+    {
+      "match_number": 96,
+      "date": "2026-07-07",
+      "venue": "Vancouver",
+      "home": "winner_85",
+      "away": "winner_87",
+      "home_cn": "瑞士/阿尔及利亚",
+      "away_cn": "哥伦比亚/加纳",
+      "status": "upcoming",
+      "note": "瑞士纪律严明vs北非技术流;哥伦比亚防守仅失1球"
+    }
+  ],
+  "reconciliation": {
+    "html_standings_mismatches": [
+      {
+        "group": "Group K",
+        "team_code": "UZB",
+        "team_cn": "乌兹别克斯坦",
+        "differences": {
+          "ga": {
+            "html_standing": 10,
+            "computed_from_html_matches": 11
+          }
+        }
+      }
+    ]
+  }
+}

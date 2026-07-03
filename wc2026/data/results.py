@@ -64,3 +64,21 @@ def load_results_overlay(path: Path | None = None) -> dict:
         return {int(k): (v[0], v[1]) for k, v in data.items() if isinstance(v, list) and len(v) == 2}
     except Exception:
         return {}
+
+
+def apply_results_overlay(fixtures: list[dict], path: Path | None = None) -> list[dict]:
+    """把 wc_results.json 叠加到 fixture 行；数据库已有比分优先。"""
+    overlay = load_results_overlay(path)
+    if not overlay:
+        return [dict(f) for f in fixtures]
+    out = []
+    for f in fixtures:
+        row = dict(f)
+        if row.get("predictable") in (0, False):
+            out.append(row)
+            continue
+        score = overlay.get(int(row["match_number"])) if row.get("match_number") is not None else None
+        if score and (row.get("home_score") is None or row.get("away_score") is None):
+            row["home_score"], row["away_score"] = score
+        out.append(row)
+    return out

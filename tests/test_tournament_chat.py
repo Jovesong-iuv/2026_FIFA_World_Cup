@@ -45,6 +45,11 @@ class FocusBlockTest(unittest.TestCase):
 def _patches():
     return (
         patch("wc2026.llm.tournament_chat.dashboard_bridge._championship_payload", return_value=CHAMP),
+        patch("wc2026.llm.tournament_chat.tournament_facts.player_leaderboard",
+              return_value=[{"team_cn": "比利时", "player": "Tielemans", "goals": 2}]),
+        patch("wc2026.llm.tournament_chat.tournament_facts.team_summary",
+              return_value={"top_scorers": [{"player": "Vini Jr", "goals": 1}],
+                            "process": {"avg_shots_for": 15}}),
         patch("wc2026.llm.tournament_chat.groups.load_group_data", return_value={"x": 1}),
         patch("wc2026.llm.tournament_chat.groups.compute_standings", return_value=STANDINGS),
         patch("wc2026.llm.tournament_chat.audit.audit_summary", return_value=AUDIT),
@@ -63,6 +68,7 @@ class BuildContextTest(unittest.TestCase):
                 p.stop()
         self.assertIn("已完赛 1 场", ctx)
         self.assertIn("夺冠概率 Top", ctx)
+        self.assertIn("射手榜", ctx)
         self.assertIn("各小组当前形势", ctx)
         self.assertIn("模型校准", ctx)
         self.assertNotIn("聚焦", ctx)        # 无 focus 时不深挖
@@ -78,6 +84,7 @@ class BuildContextTest(unittest.TestCase):
             for p in ps:
                 p.stop()
         self.assertIn("聚焦球队 巴西", ctx)
+        self.assertIn("Vini Jr", ctx)
         self.assertIn("聚焦小组 C", ctx)
 
 

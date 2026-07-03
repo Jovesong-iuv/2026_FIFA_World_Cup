@@ -8,7 +8,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from wc2026.analysis import fatigue, groups, intelligence, knockout_analysis, ranking, tournament, wc_history
+from wc2026.analysis import (
+    fatigue,
+    groups,
+    intelligence,
+    knockout_analysis,
+    ranking,
+    tournament,
+    tournament_facts,
+    wc_history,
+)
 from wc2026.analysis.team_style import style_profile
 from wc2026.config import settings
 from wc2026.data.flags import flag_emoji
@@ -255,6 +264,7 @@ def build_dashboard_payload(model, home: str, away: str, neutral: bool = True, *
         "knockout": ko_payload,
         "summary": report["summary"],
         "match_analysis": report.get("match_analysis"),
+        "tournament_facts": tournament_facts.compare_teams(home, away),
         "risks": report["risks"],
         "championship_odds": _championship_payload(model),
         "generated_at": report["generated_at"],

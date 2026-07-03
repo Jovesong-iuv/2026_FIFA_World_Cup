@@ -1,7 +1,9 @@
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
+from wc2026.analysis import groups as G
 from wc2026.analysis.groups import simulate_groups
 
 
@@ -88,6 +90,46 @@ class SimulateGroupsTest(unittest.TestCase):
         bumped = {r["team"]: r for r in
                   simulate_groups(model, {"G": scored}, n_sims=800, seed=5)["G"]}
         self.assertGreater(bumped["T4"]["qualify"], baseline["T4"]["qualify"])
+
+    def test_load_group_data_applies_results_overlay(self):
+        rows = [
+            {"match_number": 1, "group_name": "Group A", "home_team": "AAA", "away_team": "BBB",
+             "home_score": None, "away_score": None},
+            {"match_number": 2, "group_name": "Group A", "home_team": "AAA", "away_team": "CCC",
+             "home_score": None, "away_score": None},
+            {"match_number": 3, "group_name": "Group A", "home_team": "AAA", "away_team": "DDD",
+             "home_score": None, "away_score": None},
+            {"match_number": 4, "group_name": "Group A", "home_team": "BBB", "away_team": "CCC",
+             "home_score": None, "away_score": None},
+            {"match_number": 5, "group_name": "Group A", "home_team": "BBB", "away_team": "DDD",
+             "home_score": None, "away_score": None},
+            {"match_number": 6, "group_name": "Group A", "home_team": "CCC", "away_team": "DDD",
+             "home_score": None, "away_score": None},
+        ]
+
+        class Conn:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def execute(self, *_args, **_kwargs):
+                return self
+
+            def fetchall(self):
+                return rows
+
+        def overlay(fixtures):
+            out = [dict(f) for f in fixtures]
+            out[0]["home_score"], out[0]["away_score"] = 2, 0
+            return out
+
+        with patch("wc2026.analysis.groups.get_conn", return_value=Conn()), \
+                patch("wc2026.analysis.groups.apply_results_overlay", side_effect=overlay):
+            data = G.load_group_data(MockModel(["AAA", "BBB", "CCC", "DDD"]))
+
+        self.assertEqual(data["Group A"]["matches"][0], (0, 1, 2, 0))
 
 
 if __name__ == "__main__":

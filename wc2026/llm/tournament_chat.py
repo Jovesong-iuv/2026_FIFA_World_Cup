@@ -8,7 +8,7 @@ ask 复用 match_chat.ask（传全局 system / 上下文标签），只依据给
 """
 from __future__ import annotations
 
-from wc2026.analysis import audit, dashboard_bridge, groups
+from wc2026.analysis import audit, dashboard_bridge, groups, tournament_facts
 from wc2026.data.team_names import zh
 from wc2026.llm import match_chat
 
@@ -47,6 +47,18 @@ def _overview(model, fixtures, n_sims, snapshots) -> list:
             line = "，".join(f"{r['rank']}.{zh(r['team'])}({r['pts']})" for r in standings[gname])
             L.append(f"  {gname}：{line}")
 
+    scorers = tournament_facts.player_leaderboard(limit=8)
+    if scorers:
+        L.append("射手榜/球员事实（仅含已核对来源）：")
+        for r in scorers:
+            extra = []
+            if r.get("penalty_goals"):
+                extra.append(f"点球{r['penalty_goals']}")
+            if r.get("free_kick_goals"):
+                extra.append(f"任意球{r['free_kick_goals']}")
+            suffix = f"（{'，'.join(extra)}）" if extra else ""
+            L.append(f"  {r['team_cn']} {r['player']}：{r['goals']}球{suffix}")
+
     summ = audit.audit_summary(model, fixtures, snapshots=snapshots or {})
     if summ["n_finished"] > 0:
         mm = summ["model_metrics"]
@@ -83,6 +95,14 @@ def _focus_team_block(team, fixtures, standings, champ) -> str:
         gf = f["home_score"] if is_home else f["away_score"]
         ga = f["away_score"] if is_home else f["home_score"]
         parts.append(f"对 {zh(opp)} {gf}-{ga}")
+    facts = tournament_facts.team_summary(team)
+    scorers = facts.get("top_scorers") or []
+    if scorers:
+        parts.append("已核对进球球员：" + "、".join(
+            f"{s['player']} {s['goals']}球" for s in scorers[:3]))
+    process = facts.get("process") or {}
+    if process.get("avg_shots_for") is not None:
+        parts.append(f"已核对过程数据：场均射门 {process['avg_shots_for']}")
     return "；".join(parts) if len(parts) > 1 else f"【聚焦球队 {zh(team)}】数据未提供"
 
 

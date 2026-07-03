@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from wc2026.analysis import dashboard_bridge
 
@@ -22,9 +23,11 @@ class DashboardBridgePayloadTest(unittest.TestCase):
             "tank_risk": False,
         }
 
-        payload = dashboard_bridge.build_dashboard_payload(
-            _Model(), "Spain", "Saudi Arabia", pred=pred
-        )
+        with patch("wc2026.analysis.dashboard_bridge.tournament_facts.compare_teams",
+                   return_value={"home": {"team": "Spain"}, "away": {"team": "Saudi Arabia"}}):
+            payload = dashboard_bridge.build_dashboard_payload(
+                _Model(), "Spain", "Saudi Arabia", pred=pred
+            )
 
         self.assertIn("style_profiles", payload["prediction"])
         self.assertIn("win_margins", payload["prediction"])
@@ -34,6 +37,7 @@ class DashboardBridgePayloadTest(unittest.TestCase):
         self.assertIn("attack_volume", payload["prediction"]["style_profiles"]["home"]["dimensions"])
         self.assertIn("advance", payload["knockout"])
         self.assertIn("ev_board", payload["knockout"])
+        self.assertEqual(payload["tournament_facts"]["home"]["team"], "Spain")
 
 
 class _Model:
