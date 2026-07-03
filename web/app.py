@@ -3232,6 +3232,9 @@ if is_owner():
     page_options.append("访问记录")
 if user["role"] == "admin":
     page_options.append("用户管理")
+_pending_nav = st.session_state.pop("_pending_nav_page", None)
+if _pending_nav in page_options:
+    st.session_state["top_page_nav"] = _pending_nav
 page = render_top_nav(page_options)
 render_admin_user_panel()
 render_access_banner()
@@ -3369,7 +3372,7 @@ if venue_info:
     st.caption(venue_info)
 if selected_fixture is not None and st.button("🧾 进入本场推荐对比", key=f"go_rec_compare:{selected_fixture.get('match_number')}"):
     st.session_state["rec_focus_match_number"] = selected_fixture.get("match_number")
-    st.session_state["top_page_nav"] = "推荐对比"
+    st.session_state["_pending_nav_page"] = "推荐对比"
     st.rerun()
 from wc2026.analysis import ranking as _ranking
 _hr, _hsrc = _ranking.world_rank(model, home)
