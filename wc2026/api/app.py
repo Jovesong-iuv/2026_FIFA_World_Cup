@@ -319,8 +319,8 @@ def evidence_ep(home: str, away: str) -> dict:
 @app.get("/news")
 def news_ep(home: str, away: str, analyze: bool = False) -> dict:
     h, a = to_lib(home), to_lib(away)
-    items = news.fetch_for_teams([h, a])
-    out: dict = {"items": items}
+    out: dict = news.fetch_news_report([h, a])
+    items = out["items"]
     if analyze:
         out["analysis"] = news.analyze_news(h, a, items)
     return out

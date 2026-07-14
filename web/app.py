@@ -19,7 +19,8 @@ from wc2026.config import settings
 from wc2026.data.db import get_conn
 from wc2026.data.ingest import ingest_international_results
 from wc2026.data.sources import news as news_mod
-from wc2026.data.sources.fixtures_2026 import fetch_and_store_fixtures
+from wc2026.data.sources.fixtures_2026 import (fetch_fixture_snapshot,
+                                               merge_fixture_snapshots)
 from wc2026.data.team_names import zh
 from wc2026.analysis.environment import match_environment_report
 from wc2026.llm import reasoning
@@ -1732,15 +1733,30 @@ def load_model():
     return get_model()
 
 
-@st.cache_data
+@st.cache_data(ttl=300, show_spinner=False)
+def load_live_fixture_state() -> dict:
+    try:
+        fixtures = fetch_fixture_snapshot(timeout=8)
+        return {
+            "fixtures": fixtures,
+            "fetched_at": fixtures[0].get("fetched_at") if fixtures else None,
+            "error": None,
+        }
+    except Exception as exc:
+        return {"fixtures": [], "fetched_at": None, "error": str(exc)}
+
+
+@st.cache_data(ttl=300)
 def load_fixtures():
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT match_number, round_number, date_utc, home_team, away_team, group_name, "
-            "location, home_score, away_score "
-            "FROM fixtures WHERE predictable=1 ORDER BY date_utc"
+            "SELECT match_number, round_number, date_utc, home_src, away_src, home_team, away_team, "
+            "group_name, location, predictable, home_score, away_score "
+            "FROM fixtures ORDER BY date_utc"
         ).fetchall()
-    fixtures = [dict(r) for r in rows]
+    fixtures = merge_fixture_snapshots(
+        [dict(r) for r in rows], load_live_fixture_state()["fixtures"])
+    fixtures = [f for f in fixtures if f.get("predictable") == 1]
     # 叠加已提交的赛果（部署服务器 DB 可能无比分时仍能显示）
     try:
         from wc2026.data.results import load_results_overlay
@@ -1765,7 +1781,7 @@ def _get_wc_teams(model, fixtures):
     return sorted(wc_set, key=zh)
 
 
-@st.cache_data
+@st.cache_data(ttl=300)
 def load_knockout_fixtures():
     """加载全部淘汰赛赛程（round_number≥4），含 home_src/away_src slot 码。"""
     with get_conn() as conn:
@@ -1774,7 +1790,9 @@ def load_knockout_fixtures():
             "home_team, away_team, location, home_score, away_score "
             "FROM fixtures WHERE round_number >= 4 ORDER BY match_number"
         ).fetchall()
-    return [dict(r) for r in rows]
+    fixtures = merge_fixture_snapshots(
+        [dict(r) for r in rows], load_live_fixture_state()["fixtures"])
+    return [f for f in fixtures if f.get("round_number", 0) >= 4]
 
 
 def llm_configured():
@@ -2045,10 +2063,7 @@ window.addEventListener('resize',fitBracket);
 
 
 def load_news(home, away):
-    items = news_mod.fetch_for_teams([home, away])
-    if items:
-        return items, False
-    return news_mod.fetch_all()[:8], True
+    return news_mod.fetch_news_report([home, away], limit=16, timeout=10)
 
 
 def render_quota(quota: dict, label: str = "The Odds API") -> None:
@@ -3449,10 +3464,16 @@ venue_info = None
 if mode == "按赛程" and fixtures:
     from wc2026.analysis import schedule as _sch
     from datetime import datetime as _dt, timezone as _tz
-    groups = _sorted_groups({f.get("group_name") or "淘汰赛" for f in fixtures})
+    _ko_for_filter = load_knockout_fixtures()
+    _fixture_groups = {f.get("group_name") for f in fixtures if f.get("group_name")}
+    if _ko_for_filter:
+        _fixture_groups.add("淘汰赛")
+    groups = _sorted_groups(_fixture_groups)
     c1, c2 = st.columns([1, 2.4])
     group_options = ["全部"] + groups
-    group_default = st.session_state.get("single_group_pill", "全部")
+    _current_ko = _detect_current_stage(_ko_for_filter)
+    _default_group = "淘汰赛" if _current_ko and "淘汰赛" in group_options else "全部"
+    group_default = st.session_state.get("single_group_pill", _default_group)
     if group_default not in group_options:
         group_default = "全部"
     g = c1.pills(
@@ -3465,12 +3486,14 @@ if mode == "按赛程" and fixtures:
 
     _is_ko = (g == "淘汰赛")
     if _is_ko:
-        _ko_all = load_knockout_fixtures()
-        # 仅显示有确定队伍的比赛（或全部 if 暂无确定比赛）
-        _ko_resolved = [f for f in _ko_all if f.get("home_team") and f["home_team"] in model.teams
-                        and f.get("away_team") and f["away_team"] in model.teams]
-        flist = _ko_resolved if _ko_resolved else _ko_all
-        flist = sorted(flist, key=lambda f: f.get("date_utc") or "")
+        _ko_all = _ko_for_filter
+        _stage_round = _current_ko[1] if _current_ko else None
+        _stage_matches = ([f for f in _ko_all if f.get("round_number") == _stage_round]
+                          if _stage_round else _ko_all)
+        _ko_resolved = [f for f in _stage_matches
+                        if f.get("home_team") in model.teams and f.get("away_team") in model.teams]
+        flist = _ko_resolved if _ko_resolved else _stage_matches
+        flist = _sch.sort_fixtures(flist, _dt.now(_tz.utc))
     else:
         flist = _sch.sort_fixtures(
             [f for f in fixtures if g == "全部" or (f.get("group_name") or "淘汰赛") == g], _dt.now(_tz.utc))
@@ -3522,6 +3545,13 @@ else:
     home = c1.selectbox("主队", teams, index=di, format_func=zh)
     away = c2.selectbox("客队", teams, index=ai, format_func=zh)
     default_neutral = True
+
+_fixture_state = load_live_fixture_state()
+if _fixture_state["fixtures"]:
+    _fixture_time = (_fixture_state.get("fetched_at") or "").replace("T", " ")[:19]
+    st.caption(f"赛程：实时 feed · {_fixture_time} UTC · 5 分钟缓存；本地数据库仅作断网回退。")
+elif _fixture_state.get("error"):
+    st.warning("实时赛程源暂不可用，当前显示本地缓存；对阵与比分可能滞后。")
 
 o1, o2, o3 = st.columns([1, 1, 1.4])
 neutral = o1.checkbox("中立场", value=default_neutral,
@@ -3644,6 +3674,39 @@ st.caption(f"预测主链：克莱门特组合模型（九维加权 + 有界软�
            f"模型文件最近更新 {model_updated_label()}。")
 
 env_report = match_environment_report(home, away, mat, fixture=selected_fixture)
+from wc2026.analysis import dimensions as _dims
+from wc2026.analysis import goal_strategy
+from wc2026.analysis import intelligence as _intel
+prof9 = cl["dimensions"]
+_report = _intel.build_report(model, home, away, neutral, fixture=selected_fixture,
+                              fixtures=fixtures, group_state=_cl_group_state, pred=cl)
+gs = goal_strategy.recommend(mat, lam, mu)
+
+section_title("本场决策摘要")
+_outcome_labels = {"home": f"{zh(home)}胜", "draw": "平局", "away": f"{zh(away)}胜"}
+_main_outcome = max(x, key=x.get)
+_top_score = markets["correct_score_top"][0]
+_ou25 = markets["over_under"]["2.5"]
+_btts = markets["btts"]
+dc1, dc2, dc3, dc4 = st.columns(4)
+dc1.metric("90 分钟主方向", _outcome_labels[_main_outcome], f"模型 {x[_main_outcome]:.1%}")
+dc2.metric("首选比分", _top_score["score"], f"单点概率 {_top_score['prob']:.1%}")
+dc3.metric("总进球 2.5", "大" if _ou25["over"] >= _ou25["under"] else "小",
+           f"{max(_ou25['over'], _ou25['under']):.1%}")
+dc4.metric("双方进球", "是" if _btts["yes"] >= _btts["no"] else "否",
+           f"{max(_btts.values()):.1%}")
+st.info(_report["summary"]["text"])
+st.caption("决策摘要仅压缩模型与结构化证据，不把赔率或新闻标题直接写入基础概率。下方保留可核验的模型、对位和风险细节。")
+if _is_knockout_match:
+    from wc2026.analysis import knockout_analysis as _knockout
+    _ko = _knockout.build_knockout_payload(mat, lam, mu, home, away)
+    st.markdown("**晋级概率（含加时与点球）**")
+    ka1, ka2, ka3 = st.columns(3)
+    ka1.metric(f"{zh(home)} 晋级", f"{_ko['advance']['home']:.1%}")
+    ka2.metric(f"{zh(away)} 晋级", f"{_ko['advance']['away']:.1%}")
+    ka3.metric("90 分钟战平", f"{_ko['outcomes_90']['draw']:.1%}", "之后进入加时")
+    st.caption(f"加时赛主/平/客 {_ko['extra_time']['home']:.1%} / {_ko['extra_time']['draw']:.1%} / "
+               f"{_ko['extra_time']['away']:.1%}；点球基础各 50%，未获得官方首发门将与点球顺序前不做主观加成。")
 
 left, right = st.columns([3, 2])
 with left:
@@ -3716,11 +3779,6 @@ with ad2:
 st.caption("说明：该模块参考时区、球场、海拔、气候、远征和宏观国家背景做定性补充；政治/经济关系不作为直接胜负变量，赛果仍以模型概率、阵容状态和临场信息为主。")
 
 section_title("九维度能力评分")
-from wc2026.analysis import dimensions as _dims
-from wc2026.analysis import intelligence as _intel
-prof9 = cl["dimensions"]
-_report = _intel.build_report(model, home, away, neutral, fixture=selected_fixture,
-                              fixtures=fixtures, group_state=_cl_group_state, pred=cl)
 _radar_cats = _dims.DIMENSIONS + [_dims.DIMENSIONS[0]]  # 闭合多边形
 sc1, sc2 = st.columns([3, 2])
 with sc1:
@@ -3782,10 +3840,8 @@ for _n in _mu_res["notes"]:
 st.caption("对位/破局点为基于阵容身价（FotMob）与模型实力的规则化定性分析；"
            "阵容需先在下方「拉取阵容」后才有破局点，缺失时按模型实力降级。仅供参考、非投注建议。")
 
-section_title("智能体分析总结")
 _sm = _report["summary"]
-st.info(_sm["text"])
-with st.expander("分项总结（主结论 / 依据 / 关键变量 / 市场 / 置信度）", expanded=False):
+with st.expander("结论依据（主结论 / 依据 / 关键变量 / 市场 / 置信度）", expanded=False):
     st.markdown(f"- **主结论**：{_sm['main']}")
     st.markdown(f"- **核心依据**：{_sm['basis']}")
     st.markdown(f"- **关键变量**：{_sm['variables']}")
@@ -3818,42 +3874,6 @@ if _sig.get("signals"):
     st.caption(_sig["note"])
 elif _sig.get("enabled"):
     st.caption("赔率走势：暂无明显矛盾/过热信号（已剔水仅作走势参考）。")
-
-section_title("可视化大屏 Beta")
-from wc2026.analysis import dashboard_bridge as _bridge
-from wc2026.analysis import match_insights as _match_insights
-_bridge_payload = _bridge.build_dashboard_payload(
-    model, home, away, neutral,
-    fixture=selected_fixture,
-    fixtures=fixtures,
-    odds_1x2={"home": odds["home"], "draw": odds["draw"], "away": odds["away"]},
-    group_state=_cl_group_state,
-    pred=cl,
-)
-_ma = _bridge_payload.get("match_analysis") or {}
-if not _ma.get("available"):
-    st.warning(_ma.get("text", "分场分析暂无补充数据。"))
-if action_button("🌐 联网补全分场分析数据", key=f"refresh_match_insight:{home}:{away}",
-                 help="尝试拉取 FBref 射门/xG、FotMob 阵容/阵型/伤停、新闻标题，并写入 data/match_insights.json"):
-    with st.spinner("联网补全分场分析数据…"):
-        _mi_res = _match_insights.refresh_match_insight(home, away, model=model)
-        _bridge_payload["match_analysis"] = _match_insights.build_match_analysis(
-            home, away, {"prediction": _bridge_payload.get("prediction", {})}
-        )
-    if _mi_res["ok"]:
-        st.success("分场分析数据已补全。")
-    else:
-        st.warning("已写入可获取的数据；部分来源失败：" + "；".join(_mi_res["errors"][:4]))
-    st.cache_data.clear()
-    st.cache_resource.clear()
-# 注入小组赛深度战略分析（复用已计算的 _gsa_data）
-_bridge_payload["group_strategic_analysis"] = _gsa_data
-# 注入战略修正对比数据到 prediction 块
-if cl.get("strategic", {}).get("applied"):
-    _bridge_payload["prediction"]["strategic"] = cl["strategic"]
-with st.expander("打开参考项目风格大屏（HTML / Canvas 桥接版）", expanded=True):
-    st.caption("数据来自当前 Python 模型与 FastAPI 契约；UI 参考给到项目的玻璃态暗色仪表盘。人口/最佳成绩等静态资料来自 data/team_profiles.json。")
-    render_bridge_dashboard(_bridge_payload)
 
 section_title("各市场概率")
 half_full = derive.half_full_time(lam, mu)
@@ -3889,8 +3909,6 @@ with m6:
     st.write("半全场按主队视角：第一个字=上半场结果，第二个字=全场结果。")
 
 section_title("进球区间推荐")
-from wc2026.analysis import goal_strategy
-gs = goal_strategy.recommend(mat, lam, mu)
 _gs_emoji = {"满足": "✅ 满足", "不满足": "❌ 不满足", "需盘口确认": "🔶 需盘口确认"}
 gcol1, gcol2 = st.columns([1, 2])
 with gcol1:
@@ -3910,24 +3928,6 @@ with gcol2:
 st.caption("策略：放弃 1-3 球高风险区间（易遇 0-0 / 强队零封），聚焦 2-3 球与 3-4 球。"
            "盘口 / 水位类条件需结合真实赔率确认。风险控制：单场投注≤10% 资金，连黑 3 场停手，"
            "不碰冷门联赛与高水盘。模型有误差，仅供参考。")
-
-with st.expander("🎲 比分蒙特卡洛（验证单场结论的自洽性）", expanded=False):
-    from wc2026.markets import simulate as _sim
-    _ns = st.select_slider("模拟次数", [2000, 10000, 50000], value=10000, key=f"simn:{home}:{away}")
-    sm = _sim.simulate_match(mat, n_sims=int(_ns), top_k=8)
-    st.caption(f"从本场比分概率矩阵抽样 {sm['n']:,} 次，统计最高频比分，与解析「模型概率」并排对比。"
-               "二者吻合即说明单场分析里的比分/胜平负/大小球推导自洽（抽样的是同一模型，非独立预测）。")
-    st.dataframe(pd.DataFrame([{
-        "比分(主-客)": r["score"], "模拟频率": f"{r['sim_prob']:.1%}", "模型概率": f"{r['model_prob']:.1%}",
-        "差": f"{(r['sim_prob'] - r['model_prob']):+.1%}",
-    } for r in sm["top_scores"]]), hide_index=True, width="stretch")
-    vc1, vc2 = st.columns(2)
-    vc1.markdown(f"**胜平负**　模拟 {sm['sim_1x2']['home']:.0%}/{sm['sim_1x2']['draw']:.0%}/{sm['sim_1x2']['away']:.0%}　"
-                 f"模型 {sm['model_1x2']['home']:.0%}/{sm['model_1x2']['draw']:.0%}/{sm['model_1x2']['away']:.0%}")
-    vc2.markdown(f"**大/小 2.5**　模拟 {sm['sim_ou25']['over']:.0%}/{sm['sim_ou25']['under']:.0%}　"
-                 f"模型 {sm['model_ou25']['over']:.0%}/{sm['model_ou25']['under']:.0%}")
-    st.caption(f"模拟期望进球 {sm['exp_goals_sim'][0]:.2f} : {sm['exp_goals_sim'][1]:.2f}；"
-               f"胜平负模拟-模型最大偏差 {sm['max_abs_err']:.1%}（次数越多越小，正常应 <2%）。")
 
 with st.expander("💰 价值 & 凯利（输入体彩/盘口赔率）", expanded=False):
     st.caption("输入该场实际赔率(十进制/欧赔)，对比模型概率找价值盘。默认填的是模型公平赔率。")
@@ -4098,44 +4098,38 @@ with st.expander("📊 证据 · 数据支撑（交锋 + 近况）", expanded=Tr
                 {"日期": r["date"], "主客": r["ha"], "对手": zh(r["opponent"]), "比分": r["score"], "结果": r["outcome"]}
                 for r in fm["matches"]]), hide_index=True, width="stretch")
 
-with st.expander("🏆 世界杯历史（历届战绩 + 世界杯交锋）", expanded=False):
-    from wc2026.analysis import wc_history as wc_hist
-    wh1, wh2 = st.columns(2)
-    for col, team, rec in [(wh1, home, wc_hist.wc_record(home)),
-                           (wh2, away, wc_hist.wc_record(away))]:
-        with col:
-            if rec["matches"]:
-                st.metric(f"{zh(team)} · 世界杯参赛", f"{rec['editions']} 届")
-                st.caption(f"{rec['first']}–{rec['last']} · {rec['matches']} 场 "
-                           f"{rec['w']}胜{rec['d']}平{rec['l']}负 · 进 {rec['gf']} 失 {rec['ga']}")
-            else:
-                st.caption(f"{zh(team)}：无世界杯参赛记录。")
-    st.markdown("**世界杯交锋**")
-    meetings = wc_hist.wc_head_to_head(home, away)
-    if meetings:
-        st.dataframe(pd.DataFrame([
-            {"年份": m["year"], "举办国": (zh(m["country"]) if m["country"] else "—"),
-             "对阵": f"{zh(m['home'])} {m['score']} {zh(m['away'])}"}
-            for m in meetings]), hide_index=True, width="stretch")
-    else:
-        st.caption("两队此前无世界杯交锋记录。")
-    st.caption("样本较少，仅作辅助参考，不应单独作为投注依据；表格不含晋级轮次（数据源无阶段字段）。")
-
-with st.expander("📰 相关资讯", expanded=False):
+with st.expander("赛前情报与来源状态", expanded=True):
     news_key = f"news:{home}:{away}"
-    if action_button("🔄 手动刷新资讯", key=f"refresh_news:{home}:{away}"):
-        with st.spinner("抓取相关资讯…"):
-            items, fallback = load_news(home, away)
-        st.session_state[news_key] = {"items": items, "fallback": fallback}
+    if action_button("刷新实时情报（多源并行）", key=f"refresh_news:{home}:{away}"):
+        with st.spinner("并行查询官方/权威定向、Google、Yahoo、GDELT、足球 RSS…"):
+            st.session_state[news_key] = load_news(home, away)
 
     cached_news = st.session_state.get(news_key)
     if cached_news:
-        items, fallback = cached_news["items"], cached_news["fallback"]
-        if fallback:
-            st.caption("（暂无直接相关的国家队新闻，以下为综合足球头条）")
+        items = cached_news["items"]
+        _ns = cached_news["summary"]
+        _news_time = (cached_news.get("fetched_at") or "").replace("T", " ")[:19]
+        nc1, nc2, nc3 = st.columns(3)
+        nc1.metric("相关资讯", len(items))
+        nc2.metric("可用来源", f"{_ns['available']} / {_ns['total']}")
+        nc3.metric("降级来源", _ns["failed"] + _ns["empty"])
+        st.caption(f"抓取时间 {_news_time} UTC · 官方/权威 → 聚合 → 网页搜索兜底；单路失败不会中断其他来源。")
+        if cached_news["status"] == "partial":
+            st.warning("部分实时来源失败，当前结果来自其余可用来源；重要伤停仍需官方二次确认。")
+        elif cached_news["status"] == "unavailable":
+            st.warning("所有实时来源均无可用结果。当前不使用无关综合头条替代，也不对伤停作硬性推断。")
+        with st.expander("查看来源健康明细", expanded=False):
+            st.dataframe(pd.DataFrame([{
+                "来源": s["provider"], "球队": s["team"], "等级": s["tier"],
+                "状态": {"ok": "可用", "empty": "无结果", "failed": "失败"}.get(s["status"], s["status"]),
+                "条数": s["count"], "耗时(ms)": s["latency_ms"],
+                "错误": s.get("error") or "",
+            } for s in cached_news["sources"]]), hide_index=True, width="stretch")
         if items:
             for it in items[:8]:
-                st.markdown(f"- [{it['title']}]({it['link']}) · {it['source']}")
+                _pub = f" · {it['pub']}" if it.get("pub") else ""
+                st.markdown(
+                    f"- [{it['title']}]({it['link']}) · {it['source_tier']} / {it['source']}{_pub}")
             if llm_configured():
                 if action_button("🤖 手动分析资讯", key=f"analyze_news:{home}:{away}"):
                     ana = news_mod.analyze_news(home, away, items)
@@ -4179,9 +4173,9 @@ with st.expander("📰 相关资讯", expanded=False):
             else:
                 st.caption("ℹ️ AI 资讯分析需接入 LLM（当前不可用，仅展示资讯列表）。")
         else:
-            st.write("暂无资讯。")
+            st.caption("暂无可验证的本场资讯。赛前发布会、官方首发与伤停公告仍应在开赛前复核。")
     else:
-        st.caption("点击按钮后才会联网刷新资讯。")
+        st.caption("尚未拉取。本模块按来源等级聚合，并保留抓取时间与失败明细。")
 
 with st.expander("👥 阵容 / 评分 / 伤停（FotMob · 免费无需 key · 仅展示，不影响概率）", expanded=False):
     from wc2026.data import squads as squads_mod
@@ -4429,85 +4423,3 @@ with st.expander("🤖 AI 对话（结合本场全部已加载数据问答 / 粘
         if st.checkbox("查看 AI 看到的本场数据摘要", key=f"chatctx:{home}:{away}"):
             st.code(ctx)
         st.caption("AI 仅依据本场已加载数据作答；未拉取的赔率/阵容/资讯不在其中（先在上方拉取可纳入）。仅供参考、非投注建议。")
-
-
-with st.expander("💰 价值扫描（全场次自动找价值盘，需 The Odds API key）", expanded=False):
-    from wc2026.config import settings as _settings
-    if not _settings.odds_api_key:
-        st.warning("未配置 ODDS_API_KEY。注册 the-odds-api.com（免费）拿 key 填进 .env 重启即可。")
-        st.caption("（上方「💰 价值 & 凯利」可手动输入单场赔率分析。）")
-    else:
-        st.warning("⚠️ 纯模型 vs 市场会产生大量**假价值**（本模型对部分队伍有高估、回测显示会失灵）。"
-                   "超大 edge(>50%) 几乎一定是模型错而非庄家错。用下方滑块向市场收缩，只留温和分歧。")
-        blend = st.slider("模型权重（越低越信市场，推荐 0.4–0.6）", 0.0, 1.0, 0.5, 0.1)
-        if action_button("📟 查询 The Odds API 剩余请求"):
-            from wc2026.data.sources import odds_api
-            try:
-                with st.spinner("查询配额…"):
-                    st.session_state["odds_quota"] = odds_api.get_quota()
-            except Exception as exc:
-                st.error(f"配额查询失败：{exc}")
-        render_quota(st.session_state.get("odds_quota", {}))
-        if action_button("🔍 拉取当前赔率并扫描"):
-            from wc2026.data.sources import odds_api
-            try:
-                with st.spinner("拉取赔率并扫描…"):
-                    odds_map = odds_api.fetch_h2h_odds()
-                    st.session_state["odds_quota"] = odds_api.last_quota()
-                    scan = value.scan_value(model, odds_map, blend=blend)
-                    from wc2026.data import odds_history
-                    odds_history.record_event_odds_map({k: {"h2h": v} for k, v in odds_map.items()})
-                render_quota(st.session_state.get("odds_quota", {}))
-                st.caption(f"共 {len(odds_map)} 场，找到 {len(scan)} 个价值项（模型权重={blend}）")
-                if scan:
-                    st.dataframe(pd.DataFrame([{
-                        "对阵": f"{zh(r['home'])} vs {zh(r['away'])}",
-                        "押": {"home": zh(r["home"]), "draw": "平", "away": zh(r["away"])}[r["outcome"]],
-                        "赔率": r["odds"], "概率": f"{r['model_prob']:.0%}",
-                        "价值": f"{r['edge']:+.0%}", "凯利¼": f"{r['kelly_frac']:.1%}",
-                        "提示": ("⚠️模型偏差嫌疑" if r["edge"] > 0.5
-                                else ("分歧较大需谨慎" if r["edge"] > 0.15 else "温和价值")),
-                    } for r in scan]), hide_index=True, width="stretch")
-                else:
-                    st.write("收缩后无价值项——说明模型与市场无显著分歧（正常、健康）。")
-            except Exception as exc:
-                st.error(f"赔率获取失败：{exc}")
-
-with st.expander("📈 模型回测（历届世界杯校准验证）", expanded=False):
-    st.caption("样本外：用开赛前数据训练、预测该届。每届需训练约 10 秒。")
-    if action_button("▶️ 运行回测（2014 / 2018 / 2022）"):
-        from wc2026.backtest.runner import backtest_ensemble
-        rows, results = [], []
-        with st.spinner("训练并回测中…"):
-            for y in ["2014", "2018", "2022"]:
-                r = backtest_ensemble(y)
-                results.append(r)
-                rows.append({"届": y, "场次": r["n"], "LogLoss": f"{r['log_loss']:.4f}",
-                             "基准": f"{r['baseline_log_loss']:.4f}", "Brier": f"{r['brier']:.3f}",
-                             "准确率": f"{r['accuracy']:.1%}"})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-        st.caption("LogLoss < 1.0986 = 比瞎猜有预测力；Brier 越低越好。2022 是史上最大冷门届，模型会失灵——真实局限，不粉饰。")
-
-        agg = {}
-        for r in results:
-            for b in r.get("calibration", []):
-                a = agg.setdefault(b["range"], {"n": 0, "ps": 0.0, "af": 0.0})
-                a["n"] += b["n"]; a["ps"] += b["pred_mean"] * b["n"]; a["af"] += b["actual_freq"] * b["n"]
-        if agg:
-            cal = [{"预测概率区间": k, "平均预测": round(v["ps"] / v["n"], 3),
-                    "实际频率": round(v["af"] / v["n"], 3), "样本": v["n"]}
-                   for k, v in sorted(agg.items())]
-            st.markdown("**校准曲线（预测概率 vs 实际发生频率，越贴近对角线越准）**")
-            cfig = go.Figure()
-            cfig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="完美校准",
-                                      line=dict(dash="dash", color="#9aa7b6")))
-            cfig.add_trace(go.Scatter(x=[c["平均预测"] for c in cal], y=[c["实际频率"] for c in cal],
-                                      mode="lines+markers", name="模型(三届合并)"))
-            cfig.update_layout(height=300, xaxis_title="平均预测概率", yaxis_title="实际频率",
-                               xaxis_range=[0, 1], yaxis_range=[0, 1], margin=dict(l=10, r=10, t=10, b=10),
-                               template="plotly_dark" if current_theme() == "dark" else "plotly_white",
-                               paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(cfig, width="stretch")
-            st.dataframe(pd.DataFrame(cal), hide_index=True, width="stretch")
-            st.caption("⚠️ 校准是「价值」可信的前提：若预测 60% 实际只兑现 45%，说明模型高估，据此算出的「价值」多半是假 edge。"
-                       "高关注度场次市场更有效，建议在「价值扫描」里把模型权重调低（更信市场，推荐 0.4–0.6）。")

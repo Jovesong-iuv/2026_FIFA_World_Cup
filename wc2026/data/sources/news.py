@@ -5,8 +5,11 @@
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 import json
 import re
+import time
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
 
@@ -29,6 +32,8 @@ FEEDS = {
 _GOOGLE_NEWS_ZH = "https://news.google.com/rss/search?q={q}&hl=zh-CN&gl=CN&ceid=CN:zh"
 # 英文 Google News（覆盖更多国际源）
 _GOOGLE_NEWS_EN = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+_YAHOO_NEWS = "https://news.search.yahoo.com/rss?p={q}"
+_GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
 
 # 部分球队的新闻别名（英文源里的常见写法）
 _EXTRA = {
@@ -67,16 +72,102 @@ def _parse_feed(name: str, url: str, timeout: float = 20) -> list[dict]:
     return items
 
 
+def _parse_feeds_parallel(feeds: list[tuple[str, str]], timeout: float) -> list[dict]:
+    if not feeds:
+        return []
+    out = []
+    with ThreadPoolExecutor(max_workers=len(feeds)) as pool:
+        jobs = [pool.submit(_parse_feed, name, url, timeout) for name, url in feeds]
+        for job in as_completed(jobs):
+            out.extend(job.result())
+    return out
+
+
 def fetch_all(timeout: float = 20) -> list[dict]:
     out, seen = [], set()
-    for name, url in FEEDS.items():
-        for it in _parse_feed(name, url, timeout):
-            key = it["link"] or it["title"]
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            out.append(it)
+    for it in _parse_feeds_parallel(list(FEEDS.items()), timeout):
+        key = it["link"] or it["title"]
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(it)
     return out
+
+
+def _dedupe(items: list[dict]) -> list[dict]:
+    out, seen = [], set()
+    for it in items:
+        key = (it.get("link") or "").strip()
+        if not key:
+            key = re.sub(r"\s+", " ", (it.get("title") or "").strip().lower())
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(it)
+    return out
+
+
+def _tag_items(items: list[dict], tier: str, matched: str | None = None) -> list[dict]:
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    return [dict(it, source_tier=tier, fetched_at=fetched_at,
+                 **({"matched": matched} if matched and not it.get("matched") else {}))
+            for it in items]
+
+
+def _matches_teams(item: dict, teams: list[str]) -> bool:
+    text = f"{item.get('title', '')} {item.get('summary', '')}".lower()
+    return any(keyword and keyword in text
+               for team in teams for keyword in _keywords(team))
+
+
+def authoritative_news_for(team: str, limit: int = 8, timeout: float = 15) -> list[dict]:
+    """Search official bodies and major newsrooms through Google News RSS."""
+    queries = [
+        ("Google News·官方", f'"{team}" World Cup 2026 '
+         "(site:fifa.com OR site:uefa.com OR site:concacaf.com OR site:conmebol.com)"),
+        ("Google News·通讯社", f'"{team}" World Cup 2026 '
+         "(site:reuters.com OR site:apnews.com OR site:bbc.com OR site:espn.com)"),
+    ]
+    feeds = [(source, _GOOGLE_NEWS_EN.format(q=quote(query))) for source, query in queries]
+    out = _parse_feeds_parallel(feeds, timeout)
+    for item in out:
+        item["matched"] = team
+    return _dedupe(out)[:limit]
+
+
+def yahoo_news_for(team: str, limit: int = 8, timeout: float = 15) -> list[dict]:
+    query = quote(f'"{team}" World Cup 2026 injury lineup news')
+    items = _parse_feed("Yahoo News", _YAHOO_NEWS.format(q=query), timeout)
+    return [dict(item, matched=team) for item in items[:limit]]
+
+
+def gdelt_news_for(team: str, limit: int = 8, timeout: float = 15) -> list[dict]:
+    """Use GDELT's public document index as a non-RSS global fallback."""
+    try:
+        resp = requests.get(
+            _GDELT_DOC,
+            params={
+                "query": f'"{team}" AND ("World Cup" OR injury OR lineup)',
+                "mode": "artlist",
+                "format": "json",
+                "maxrecords": min(limit, 250),
+                "sort": "hybridrel",
+            },
+            headers=_UA,
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        articles = resp.json().get("articles") or []
+    except Exception:
+        return []
+    return [{
+        "source": article.get("domain") or "GDELT",
+        "title": (article.get("title") or "").strip(),
+        "link": article.get("url") or "",
+        "pub": article.get("seendate") or "",
+        "summary": "",
+        "matched": team,
+    } for article in articles if article.get("title") and article.get("url")][:limit]
 
 
 def _keywords(team: str) -> list[str]:
@@ -85,28 +176,16 @@ def _keywords(team: str) -> list[str]:
 
 def google_news_for(team: str, limit: int = 8, timeout: float = 15) -> list[dict]:
     """Google News RSS 按球队定向搜索（中文+英文双语）。失败返回 []。"""
-    out, seen = [], set()
     team_zh = zh(team)
-
-    # 中文搜索
     q_zh = quote(f"{team_zh} 足球 国家队")
-    for it in _parse_feed("Google News(中)", _GOOGLE_NEWS_ZH.format(q=q_zh), timeout):
-        key = it.get("link") or it.get("title")
-        if key and key not in seen:
-            seen.add(key)
-            it["matched"] = team_zh
-            out.append(it)
-
-    # 英文搜索（补充国际源）
     q_en = quote(f"{team} World Cup 2026 national team")
-    for it in _parse_feed("Google News(英)", _GOOGLE_NEWS_EN.format(q=q_en), timeout):
-        key = it.get("link") or it.get("title")
-        if key and key not in seen:
-            seen.add(key)
-            it["matched"] = team
-            out.append(it)
-
-    return out[:limit]
+    out = _parse_feeds_parallel([
+        ("Google News(中)", _GOOGLE_NEWS_ZH.format(q=q_zh)),
+        ("Google News(英)", _GOOGLE_NEWS_EN.format(q=q_en)),
+    ], timeout)
+    for item in out:
+        item["matched"] = team_zh if item["source"] == "Google News(中)" else team
+    return _dedupe(out)[:limit]
 
 
 def web_search_for_team(team: str, limit: int = 8, timeout: float = 20) -> list[dict]:
@@ -119,8 +198,18 @@ def web_search_for_team(team: str, limit: int = 8, timeout: float = 20) -> list[
     team_zh = zh(team)
     results = []
 
-    # 搜索中文新闻
-    zh_results = ws.search_team_news(team_zh, max_results=limit // 2, timeout=timeout)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        zh_job = pool.submit(
+            ws.search_team_news, team_zh, max_results=limit // 2, timeout=timeout)
+        en_job = pool.submit(
+            ws.search_duckduckgo,
+            f"{team} World Cup 2026 news injury lineup",
+            max_results=limit // 2,
+            timeout=timeout,
+        )
+        zh_results = zh_job.result()
+        en_results = en_job.result()
+
     for r in zh_results:
         results.append({
             "source": "Web搜索",
@@ -131,12 +220,6 @@ def web_search_for_team(team: str, limit: int = 8, timeout: float = 20) -> list[
             "matched": team_zh,
         })
 
-    # 搜索英文新闻（补充）
-    en_results = ws.search_duckduckgo(
-        f"{team} World Cup 2026 news injury lineup",
-        max_results=limit // 2,
-        timeout=timeout,
-    )
     for r in en_results:
         results.append({
             "source": "Web搜索(英)",
@@ -151,35 +234,102 @@ def web_search_for_team(team: str, limit: int = 8, timeout: float = 20) -> list[
 
 
 def fetch_for_teams(teams: list[str], limit: int = 15, timeout: float = 20) -> list[dict]:
-    """多源汇总：Google News(中+英) → 通用英文 RSS → 联网搜索后备。"""
-    out, seen = [], set()
+    """Compatibility wrapper returning items from the resilient source report."""
+    return fetch_news_report(teams, limit=limit, timeout=timeout)["items"]
 
-    def _add(it):
-        key = it.get("link") or it.get("title")
-        if key and key not in seen:
-            seen.add(key)
-            out.append(it)
 
-    # 1) Google News 定向搜索（中文+英文双语）
-    for t in teams:
-        for it in google_news_for(t, timeout=timeout):
-            _add(it)
+def fetch_news_report(teams: list[str], limit: int = 15, timeout: float = 12) -> dict:
+    """Fetch team news concurrently and expose per-source degradation details."""
+    started_at = datetime.now(timezone.utc).isoformat()
+    source_status = []
+    collected = []
+    jobs = []
+    for team in teams:
+        jobs.extend([
+            ("Google News", team, "新闻聚合", google_news_for),
+            ("官方/权威定向", team, "官方/权威媒体", authoritative_news_for),
+            ("Yahoo News", team, "新闻聚合备援", yahoo_news_for),
+            ("GDELT", team, "全球新闻聚合", gdelt_news_for),
+        ])
 
-    # 2) 通用英文 RSS 按队名匹配
-    kws = {kw for t in teams for kw in _keywords(t)}
-    for it in fetch_all(timeout):
-        text = (it["title"] + " " + it["summary"]).lower()
-        hit = next((kw for kw in kws if kw and kw in text), None)
-        if hit:
-            _add(dict(it, matched=hit))
+    def run(provider_name, team, tier, func):
+        began = time.monotonic()
+        try:
+            items = func(team, limit=min(8, limit), timeout=timeout)
+            error = None
+        except Exception as exc:
+            items, error = [], str(exc)
+        return provider_name, team, tier, items, error, round((time.monotonic() - began) * 1000)
 
-    # 3) 联网搜索后备：当结果不足 limit 的 60% 时触发
-    if len(out) < limit * 0.6:
-        for t in teams:
-            for it in web_search_for_team(t, limit=4, timeout=timeout):
-                _add(it)
+    def run_feeds():
+        began = time.monotonic()
+        try:
+            items = [item for item in fetch_all(timeout) if _matches_teams(item, teams)]
+            error = None
+        except Exception as exc:
+            items, error = [], str(exc)
+        return ("通用足球 RSS", "全部", "权威/足球媒体", items, error,
+                round((time.monotonic() - began) * 1000))
 
-    return out[:limit]
+    with ThreadPoolExecutor(max_workers=min(10, max(1, len(jobs) + 1))) as pool:
+        futures = [pool.submit(run, *job) for job in jobs]
+        futures.append(pool.submit(run_feeds))
+        for future in as_completed(futures):
+            provider_name, team, tier, items, error, latency_ms = future.result()
+            status = "failed" if error else ("ok" if items else "empty")
+            source_status.append({
+                "provider": provider_name,
+                "team": team,
+                "tier": tier,
+                "status": status,
+                "count": len(items),
+                "latency_ms": latency_ms,
+                "error": error,
+            })
+            collected.extend(_tag_items(items, tier, team if team != "全部" else None))
+
+    collected = _dedupe(collected)
+    fallback_used = len(collected) < max(1, int(limit * 0.6))
+    if fallback_used:
+        def run_web(team):
+            began = time.monotonic()
+            try:
+                items = web_search_for_team(team, limit=4, timeout=timeout)
+                error = None
+            except Exception as exc:
+                items, error = [], str(exc)
+            return team, items, error, round((time.monotonic() - began) * 1000)
+
+        with ThreadPoolExecutor(max_workers=max(1, len(teams))) as pool:
+            web_jobs = [pool.submit(run_web, team) for team in teams]
+            for job in as_completed(web_jobs):
+                team, items, error, latency_ms = job.result()
+                status = "failed" if error else ("ok" if items else "empty")
+                source_status.append({
+                    "provider": "网页搜索", "team": team, "tier": "网页搜索兜底",
+                    "status": status, "count": len(items),
+                    "latency_ms": latency_ms, "error": error,
+                })
+                collected.extend(_tag_items(items, "网页搜索兜底", team))
+
+    tier_order = {
+        "官方/权威媒体": 0, "权威/足球媒体": 1, "新闻聚合": 2,
+        "新闻聚合备援": 3, "全球新闻聚合": 4, "网页搜索兜底": 5,
+    }
+    items = sorted(_dedupe(collected), key=lambda item: tier_order.get(item["source_tier"], 9))[:limit]
+    failed = sum(s["status"] == "failed" for s in source_status)
+    available = sum(s["status"] == "ok" for s in source_status)
+    empty = sum(s["status"] == "empty" for s in source_status)
+    status = "unavailable" if not items else ("partial" if failed else "ok")
+    return {
+        "items": items,
+        "status": status,
+        "fallback_used": fallback_used,
+        "fetched_at": started_at,
+        "sources": sorted(source_status, key=lambda s: (s["provider"], s["team"])),
+        "summary": {"available": available, "failed": failed, "empty": empty,
+                    "total": len(source_status)},
+    }
 
 
 def deep_search_and_analyze(team_home: str, team_away: str,
