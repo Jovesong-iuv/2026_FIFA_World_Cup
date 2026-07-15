@@ -1,12 +1,46 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import patch
 
-from wc2026.analysis.match_insights import build_match_analysis, refresh_match_insight
+from wc2026.analysis.match_insights import (_espn_match_rows, build_match_analysis,
+                                            refresh_match_insight)
 
 
 class MatchInsightsTest(unittest.TestCase):
+    def test_espn_fixture_stats_become_single_match_rows(self):
+        fixture = {"match_stats_json": json.dumps({
+            "France": {"possession": 0.612, "shots": 14, "shots_on_target": 6},
+            "Morocco": {"possession": 0.388, "shots": 8, "shots_on_target": 2},
+        })}
+
+        rows = _espn_match_rows("France", "Morocco", fixture)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["source"], "ESPN单场")
+        self.assertEqual(rows[0]["shots_for"], 14)
+        self.assertEqual(rows[0]["possession"], 0.612)
+        self.assertIn("射正 6", rows[0]["takeaway"])
+
+    def test_refresh_prefers_espn_single_match_stats_over_team_aggregates(self):
+        fixture = {"match_stats_json": json.dumps({
+            "France": {"possession": 0.61, "shots": 14, "shots_on_target": 6},
+            "Morocco": {"possession": 0.39, "shots": 8, "shots_on_target": 2},
+        })}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "match_insights.json"
+            with patch("wc2026.analysis.match_insights.fbref.fetch_team_shooting") as fbref_fetch, \
+                    patch("wc2026.analysis.match_insights.squads.refresh_fm_squad",
+                          return_value={"formation": "4-3-3", "injured": 0}), \
+                    patch("wc2026.analysis.match_insights.news.fetch_for_teams", return_value=[]), \
+                    patch("wc2026.analysis.match_insights.news.deep_search_and_analyze", return_value=None):
+                result = refresh_match_insight("France", "Morocco", path=path, fixture=fixture)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["entry"]["prior_matches"][0]["source"], "ESPN单场")
+        fbref_fetch.assert_not_called()
+
     def test_builds_field_analysis_from_prior_match_data_and_markets(self):
         report = {
             "prediction": {

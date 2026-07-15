@@ -1,4 +1,8 @@
 import unittest
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from wc2026.analysis import adjustments as adj
 from wc2026.markets.derive import outcomes_1x2
@@ -26,6 +30,16 @@ def _match(home, away, hs, as_, date="2026-06-20", **extra):
 
 
 class ResultDeltaTest(unittest.TestCase):
+    def test_scoreline_weight_is_bounded_by_nearest_top_three_distance(self):
+        top = [{"score": "1-0", "prob": 0.2}, {"score": "2-1", "prob": 0.15},
+               {"score": "1-1", "prob": 0.14}]
+
+        self.assertEqual(adj._scoreline_weight(top, 2, 1)[0], 0.70)
+        self.assertEqual(adj._scoreline_weight(top, 2, 2)[0], 0.90)
+        self.assertEqual(adj._scoreline_weight(top, 3, 2)[0], 1.00)
+        self.assertEqual(adj._scoreline_weight(top, 4, 2)[0], 1.10)
+        self.assertEqual(adj._scoreline_weight([], 4, 2)[0], 1.00)
+
     def test_upset_moves_ratings(self):
         d = adj.compute_result_deltas(_model(), [_match("Weak", "Strong", 3, 0)])
         self.assertGreater(d["Weak"]["elo"], 0)      # 弱队爆冷 → 加分
@@ -73,6 +87,37 @@ class ResultDeltaTest(unittest.TestCase):
         self.assertLess(abs(noisy["Weak"]["elo"]), abs(plain["Weak"]["elo"]))
         self.assertLess(noisy["Weak"]["sources"][0]["process_weight"], 1.0)
 
+    def test_ft_espn_stats_reduce_update_when_score_contradicts_process(self):
+        stats = {
+            "Weak": {"shots": 4, "possession": 0.35},
+            "Strong": {"shots": 18, "possession": 0.65},
+        }
+        match = _match("Weak", "Strong", 1, 0, result_status="FT",
+                       match_stats_json=json.dumps(stats))
+
+        result = adj.compute_result_deltas(_model(), [match])
+        source = result["Weak"]["sources"][0]
+
+        self.assertLess(source["process_weight"], 1.0)
+        self.assertIn("ESPN", " ".join(source["weight_notes"]))
+
+    def test_aet_espn_stats_never_weight_regulation_process(self):
+        stats = {
+            "Weak": {"shots": 4, "possession": 0.35},
+            "Strong": {"shots": 18, "possession": 0.65},
+        }
+        match = _match(
+            "Weak", "Strong", 2, 1, result_status="AET", round_number=4,
+            regulation_home_score=1, regulation_away_score=1,
+            match_stats_json=json.dumps(stats),
+        )
+
+        result = adj.compute_result_deltas(_model(), [match])
+        source = result["Weak"]["sources"][0]
+
+        self.assertEqual(source["process_weight"], 1.0)
+        self.assertIn("不用于90分钟", " ".join(source["weight_notes"]))
+
     def test_recent_matches_get_more_weight_than_old_matches(self):
         m = _model()
         old = adj.compute_result_deltas(m, [_match("Weak", "Strong", 2, 0, "2026-06-01")],
@@ -82,6 +127,53 @@ class ResultDeltaTest(unittest.TestCase):
 
         self.assertGreater(abs(recent["Weak"]["elo"]), abs(old["Weak"]["elo"]))
         self.assertGreater(recent["Weak"]["sources"][0]["time_decay"], old["Weak"]["sources"][0]["time_decay"])
+
+    def test_uses_locked_top_three_and_regulation_score_for_aet_match(self):
+        match = _match(
+            "Weak", "Strong", 3, 2, match_number=80, round_number=4,
+            regulation_home_score=1, regulation_away_score=1,
+            result_status="AET", event_flags=["extra_time"],
+        )
+        snapshots = {80: {
+            "outcomes": {"home": 0.25, "draw": 0.30, "away": 0.45},
+            "expected_goals": {"home": 1.1, "away": 1.2},
+            "top_scores": [
+                {"score": "1-1", "prob": 0.16},
+                {"score": "0-1", "prob": 0.14},
+                {"score": "1-2", "prob": 0.12},
+            ],
+        }}
+
+        result = adj.compute_result_deltas(_model(), [match], snapshots=snapshots)
+        source = result["Weak"]["sources"][0]
+
+        self.assertEqual(source["actual"]["home_score"], 1)
+        self.assertEqual(source["actual"]["away_score"], 1)
+        self.assertEqual(source["predicted"]["home_xg"], 1.1)
+        self.assertEqual(source["predicted"]["top_scores"][0]["score"], "1-1")
+        self.assertEqual(source["scoreline_calibration"]["weight"], 0.70)
+        self.assertTrue(source["scoreline_calibration"]["comparison"]["top1_hit"])
+        self.assertIn("特殊事件降权", source["weight_notes"])
+
+    def test_skips_unverified_knockout_total(self):
+        match = _match("Weak", "Strong", 3, 2, match_number=80, round_number=4,
+                       result_status="AET")
+
+        self.assertEqual(adj.compute_result_deltas(_model(), [match], snapshots={}), {})
+
+    def test_legacy_snapshot_does_not_backfill_current_model_scorelines(self):
+        match = _match("Weak", "Strong", 1, 0, match_number=1)
+        snapshots = {1: {
+            "outcomes": {"home": 0.3, "draw": 0.3, "away": 0.4},
+            "expected_goals": {"home": 1.0, "away": 1.2},
+        }}
+
+        result = adj.compute_result_deltas(_model(), [match], snapshots=snapshots)
+        source = result["Weak"]["sources"][0]
+
+        self.assertEqual(source["predicted"]["top_scores"], [])
+        self.assertEqual(source["predicted"]["top_scores_source"], "unavailable_legacy_snapshot")
+        self.assertFalse(source["scoreline_calibration"]["comparison"]["available"])
 
 
 class MergeBoundsTest(unittest.TestCase):
@@ -114,6 +206,46 @@ class ApplyTest(unittest.TestCase):
         before = outcomes_1x2(m.score_matrix("Weak", "Mid", True))["home"]
         after = outcomes_1x2(boosted.score_matrix("Weak", "Mid", True))["home"]
         self.assertGreater(after, before)            # 被增强后胜率上升
+
+
+class LoadAdjustmentsTest(unittest.TestCase):
+    def test_ignores_unversioned_adjustments_to_prevent_double_counting(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "team_adjustments.json"
+            path.write_text(json.dumps({
+                "trained_through": "",
+                "teams": {"Weak": {"elo": 40.0, "attack": 0.1, "defense": -0.1}},
+            }), encoding="utf-8")
+            with patch.object(adj, "ADJ_PATH", path):
+                loaded = adj.load_adjustments()
+
+        self.assertEqual(loaded, {})
+
+    def test_reports_unversioned_adjustments_as_ignored(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "team_adjustments.json"
+            path.write_text(json.dumps({
+                "trained_through": "",
+                "teams": {"Weak": {"elo": 40.0}},
+            }), encoding="utf-8")
+            with patch.object(adj, "ADJ_PATH", path):
+                status = adj.adjustment_artifact_status()
+
+        self.assertEqual(status["state"], "unversioned")
+        self.assertFalse(status["applied"])
+        self.assertIn("重复", status["reason"])
+
+    def test_loads_adjustments_with_training_cutoff(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "team_adjustments.json"
+            path.write_text(json.dumps({
+                "trained_through": "2026-07-13",
+                "teams": {"Weak": {"elo": 40.0, "attack": 0.1, "defense": -0.1}},
+            }), encoding="utf-8")
+            with patch.object(adj, "ADJ_PATH", path):
+                loaded = adj.load_adjustments()
+
+        self.assertEqual(loaded["Weak"]["elo"], 40.0)
 
 
 class CutoffTest(unittest.TestCase):

@@ -55,6 +55,7 @@ def _snap_from_report(fixture: dict, report: dict, now) -> dict:
         "phase": report.get("phase"),
         "outcomes": pred["outcomes"],
         "expected_goals": pred["expected_goals"],
+        "top_scores": (pred.get("top_scores") or [])[:3],
         "data_quality": report["data_quality"],
         "lineup": report.get("lineup"),
         "confidence": report.get("confidence"),

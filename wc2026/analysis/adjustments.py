@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from wc2026.analysis.team_style import style_profile
 from wc2026.config import settings
 from wc2026.data.db import get_conn
+from wc2026.data.results import regulation_score
 from wc2026.markets.derive import correct_score_top, outcomes_1x2
 from wc2026.models.elo import _goal_mult
 from wc2026.models.predictor import EnsembleModel
@@ -88,7 +89,8 @@ def _finished_wc_matches(cutoff: str) -> list[dict]:
     """fixtures 已完赛、日期严格晚于 cutoff 的世界杯比赛(防双重计数)。"""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT match_number, round_number, date_utc, home_team, away_team, home_score, away_score "
+            "SELECT match_number, round_number, date_utc, home_team, away_team, home_score, away_score, "
+            "regulation_home_score, regulation_away_score, result_status, event_flags, match_stats_json "
             "FROM fixtures WHERE predictable=1 AND home_score IS NOT NULL "
             "AND away_score IS NOT NULL ORDER BY date_utc"
         ).fetchall()
@@ -103,8 +105,15 @@ def _event_weight(m: dict) -> tuple[float, list[str]]:
             notes.append("淘汰赛高权重")
     except (TypeError, ValueError):
         pass
-    text = " ".join(str(x) for x in (m.get("event_flags") or m.get("notes") or []))
-    if any(w in text for w in ("点球", "红牌", "伤退", "乌龙", "penalty", "red_card", "injury_exit", "own_goal")):
+    events = m.get("event_flags") or m.get("notes") or []
+    if isinstance(events, str):
+        try:
+            events = json.loads(events)
+        except (TypeError, ValueError):
+            events = [events]
+    text = " ".join(str(x) for x in events)
+    if any(w in text for w in ("点球", "红牌", "伤退", "乌龙", "penalty", "red_card",
+                               "injury_exit", "own_goal", "extra_time")):
         weight *= SPECIAL_EVENT_WEIGHT
         notes.append("特殊事件降权")
     return weight, notes
@@ -140,21 +149,54 @@ def _time_decay(match_date: str | None, as_of: str | None) -> float:
 
 
 def _process_weight(m: dict, hs: int, as_: int) -> tuple[float, list[str]]:
-    if m.get("home_xg") is None or m.get("away_xg") is None:
-        return 1.0, ["缺少xG过程数据，按比分低假设渐进修正"]
-    try:
-        home_xg, away_xg = float(m["home_xg"]), float(m["away_xg"])
-    except (TypeError, ValueError):
-        return 1.0, ["xG过程数据不可解析，按比分低假设渐进修正"]
-    xg_diff = home_xg - away_xg
-    score_diff = hs - as_
-    if abs(xg_diff) <= 0.35:
-        return 0.75, ["xG接近，降低单场比分噪声权重"]
-    if xg_diff * score_diff < 0:
-        return 0.45, ["比分方向与xG过程相反，显著降权避免过拟合"]
-    if abs(xg_diff) >= 0.8 and xg_diff * score_diff > 0:
-        return 1.15, ["比分方向与xG优势一致，小幅加权"]
-    return 1.0, ["xG与比分未形成强冲突，维持常规权重"]
+    if m.get("home_xg") is not None and m.get("away_xg") is not None:
+        try:
+            home_xg, away_xg = float(m["home_xg"]), float(m["away_xg"])
+        except (TypeError, ValueError):
+            return 1.0, ["xG过程数据不可解析，按比分低假设渐进修正"]
+        xg_diff = home_xg - away_xg
+        score_diff = hs - as_
+        if abs(xg_diff) <= 0.35:
+            return 0.75, ["xG接近，降低单场比分噪声权重"]
+        if xg_diff * score_diff < 0:
+            return 0.45, ["比分方向与xG过程相反，显著降权避免过拟合"]
+        if abs(xg_diff) >= 0.8 and xg_diff * score_diff > 0:
+            return 1.15, ["比分方向与xG优势一致，小幅加权"]
+        return 1.0, ["xG与比分未形成强冲突，维持常规权重"]
+
+    raw_stats = m.get("match_stats_json")
+    if raw_stats and m.get("result_status") in {"AET", "PEN"}:
+        return 1.0, ["ESPN全场统计包含加时，不用于90分钟过程修正"]
+    if raw_stats and m.get("result_status") == "FT":
+        try:
+            stats = json.loads(raw_stats) if isinstance(raw_stats, str) else raw_stats
+            home_stats = (stats or {}).get(m["home_team"]) or {}
+            away_stats = (stats or {}).get(m["away_team"]) or {}
+            signals = []
+            if home_stats.get("shots") is not None and away_stats.get("shots") is not None:
+                home_shots, away_shots = float(home_stats["shots"]), float(away_stats["shots"])
+                if home_shots + away_shots > 0:
+                    signals.append((home_shots - away_shots) / (home_shots + away_shots))
+            if home_stats.get("possession") is not None and away_stats.get("possession") is not None:
+                home_pos, away_pos = float(home_stats["possession"]), float(away_stats["possession"])
+                if max(abs(home_pos), abs(away_pos)) > 1:
+                    home_pos, away_pos = home_pos / 100.0, away_pos / 100.0
+                signals.append(home_pos - away_pos)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            signals = []
+        if signals:
+            process_diff = sum(signals) / len(signals)
+            score_diff = hs - as_
+            if abs(process_diff) <= 0.10:
+                return 0.85, ["ESPN射门/控球接近，降低单场比分噪声权重"]
+            if score_diff == 0:
+                return 0.75, ["ESPN过程存在优势但90分钟战平，降低结果纠偏"]
+            if process_diff * score_diff < 0:
+                return 0.60, ["比分方向与ESPN射门/控球过程相反，显著降权"]
+            if abs(process_diff) >= 0.20:
+                return 1.10, ["比分方向与ESPN射门/控球优势一致，小幅加权"]
+            return 1.0, ["ESPN射门/控球与比分未形成强冲突，维持常规权重"]
+    return 1.0, ["缺少可验证的90分钟过程数据，按比分低假设渐进修正"]
 
 
 def _goal_calibration(hs: int, as_: int, lam: float, mu: float) -> dict:
@@ -179,22 +221,51 @@ def _goal_calibration(hs: int, as_: int, lam: float, mu: float) -> dict:
     }
 
 
+def _scoreline_weight(top_scores: list[dict] | None, hs: int, as_: int) -> tuple[float, dict]:
+    from wc2026.analysis.audit import scoreline_comparison
+
+    comparison = scoreline_comparison(top_scores, hs, as_)
+    if not comparison.get("available"):
+        return 1.0, comparison
+    if comparison["top3_hit"]:
+        return 0.70, comparison
+    distance = comparison["min_score_distance"]
+    if distance == 1:
+        return 0.90, comparison
+    if distance == 2:
+        return 1.00, comparison
+    return 1.10, comparison
+
+
 def _postmatch_learning_source(base_model: EnsembleModel, m: dict, neutral: bool,
-                               lam: float, mu: float, home_delta_elo: float,
+                               hs: int, as_: int, lam: float, mu: float, home_delta_elo: float,
                                away_delta_elo: float, event_weight: float,
                                process_weight: float, time_decay: float,
-                               weight_notes: list[str]) -> tuple[dict, dict]:
+                               scoreline_weight: float, scoreline_comparison: dict,
+                               weight_notes: list[str], snapshot: dict | None = None) -> tuple[dict, dict]:
     h, a = m["home_team"], m["away_team"]
-    hs, as_ = int(m["home_score"]), int(m["away_score"])
+    snapshot = snapshot or {}
     mat = base_model.score_matrix(h, a, neutral)
+    snapshot_outcomes = snapshot.get("outcomes") or {}
+    outcomes = (snapshot_outcomes if all(k in snapshot_outcomes for k in ("home", "draw", "away"))
+                else outcomes_1x2(mat))
+    if snapshot:
+        top_scores = snapshot.get("top_scores") or []
+        top_scores_source = ("prematch_snapshot" if top_scores
+                             else "unavailable_legacy_snapshot")
+    else:
+        top_scores = correct_score_top(mat, n=5)
+        top_scores_source = "current_base_model"
     actual = {"home_score": hs, "away_score": as_, "total_goals": hs + as_,
               "outcome": _outcome(hs, as_)}
     predicted = {
         "home_xg": round(float(lam), 3),
         "away_xg": round(float(mu), 3),
         "total_goals": round(float(lam + mu), 3),
-        "outcomes_1x2": {k: round(v, 4) for k, v in outcomes_1x2(mat).items()},
-        "top_scores": correct_score_top(mat, n=5),
+        "outcomes_1x2": {k: round(float(v), 4) for k, v in outcomes.items()},
+        "top_scores": top_scores,
+        "top_scores_source": top_scores_source,
+        "source": "prematch_snapshot" if snapshot else "current_base_model",
     }
     common = {
         "actual": actual,
@@ -208,16 +279,18 @@ def _postmatch_learning_source(base_model: EnsembleModel, m: dict, neutral: bool
         },
         "style": {"home": style_profile(h, base_model.team_profiles),
                   "away": style_profile(a, base_model.team_profiles)},
-        "weight": round(event_weight * process_weight * time_decay, 4),
+        "weight": round(event_weight * process_weight * time_decay * scoreline_weight, 4),
         "event_weight": round(event_weight, 4),
         "process_weight": round(process_weight, 4),
         "time_decay": round(time_decay, 4),
+        "scoreline_calibration": {"weight": scoreline_weight,
+                                  "comparison": scoreline_comparison},
         "weight_notes": weight_notes,
         "goal_calibration": _goal_calibration(hs, as_, lam, mu),
     }
     at = (m.get("date_utc") or "")[:10]
     detail = f"{h} {hs}-{as_} {a}"
-    final_weight = event_weight * process_weight * time_decay
+    final_weight = event_weight * process_weight * time_decay * scoreline_weight
     home_delta_attack = ETA * final_weight * (hs - lam)
     home_delta_defense = ETA * final_weight * (as_ - mu)
     away_delta_attack = ETA * final_weight * (as_ - mu)
@@ -234,9 +307,10 @@ def _postmatch_learning_source(base_model: EnsembleModel, m: dict, neutral: bool
 
 
 def compute_result_deltas(base_model: EnsembleModel, matches: list[dict], *,
-                          as_of: str | None = None) -> dict:
+                          as_of: str | None = None, snapshots: dict | None = None) -> dict:
     """用赛前基线模型逐场算增量。返回 {team: {elo,attack,defense,sources}}。"""
     elo = getattr(base_model, "elo", None)
+    snapshots = snapshots or {}
     adj: dict = {}
 
     def ensure(t: str) -> dict:
@@ -246,18 +320,31 @@ def compute_result_deltas(base_model: EnsembleModel, matches: list[dict], *,
         h, a = m["home_team"], m["away_team"]
         if not (base_model.has_team(h) and base_model.has_team(a)):
             continue
-        hs, as_ = int(m["home_score"]), int(m["away_score"])
+        regulation = regulation_score(m)
+        if regulation is None:
+            continue
+        hs, as_ = regulation
+        snapshot = snapshots.get(m.get("match_number")) or snapshots.get(str(m.get("match_number"))) or {}
         neutral = h not in HOSTS                       # 东道主保留主场优势
         event_weight, weight_notes = _event_weight(m)
         process_weight, process_notes = _process_weight(m, hs, as_)
         decay = _time_decay(m.get("date_utc"), as_of)
-        final_weight = event_weight * process_weight * decay
+        score_weight, score_comparison = _scoreline_weight(snapshot.get("top_scores"), hs, as_)
+        final_weight = event_weight * process_weight * decay * score_weight
         weight_notes = weight_notes + process_notes
+        if score_comparison.get("available"):
+            if score_comparison.get("top3_hit"):
+                weight_notes.append("赛前Top 3比分命中，降低单场纠偏")
+            elif score_weight > 1.0:
+                weight_notes.append("赛前Top 3比分偏差较大，小幅提高纠偏")
         if decay < 1.0:
             weight_notes.append("旧比赛按时间衰减降权")
 
         # Elo 增量：实际胜负 vs 赛前期望胜率(主队视角 We=胜+半平)
-        if elo is not None and getattr(elo, "ratings", None):
+        snapshot_outcomes = snapshot.get("outcomes") or {}
+        if all(k in snapshot_outcomes for k in ("home", "draw", "away")):
+            we = float(snapshot_outcomes["home"]) + 0.5 * float(snapshot_outcomes["draw"])
+        elif elo is not None and getattr(elo, "ratings", None):
             qx = elo.prob_1x2(h, a, neutral)
             we = qx["home"] + 0.5 * qx["draw"]
         else:
@@ -266,7 +353,11 @@ def compute_result_deltas(base_model: EnsembleModel, matches: list[dict], *,
         d_elo = K_WC * final_weight * _goal_mult(hs - as_) * (w - we)
 
         # 攻防增量：实际进/失球 vs 赛前期望进球(符号与 DC 一致：defense 越大失球越多)
-        lam, mu = base_model.expected_goals(h, a, neutral)
+        expected = snapshot.get("expected_goals") or {}
+        try:
+            lam, mu = float(expected["home"]), float(expected["away"])
+        except (KeyError, TypeError, ValueError):
+            lam, mu = base_model.expected_goals(h, a, neutral)
         eh, ea = ensure(h), ensure(a)
         eh["elo"] += d_elo
         ea["elo"] -= d_elo
@@ -276,8 +367,9 @@ def compute_result_deltas(base_model: EnsembleModel, matches: list[dict], *,
         ea["defense"] += ETA * final_weight * (hs - lam)
 
         home_src, away_src = _postmatch_learning_source(
-            base_model, m, neutral, lam, mu, d_elo, -d_elo,
-            event_weight, process_weight, decay, weight_notes)
+            base_model, m, neutral, hs, as_, lam, mu, d_elo, -d_elo,
+            event_weight, process_weight, decay, score_weight, score_comparison,
+            weight_notes, snapshot=snapshot)
         eh["sources"].append(home_src)
         ea["sources"].append(away_src)
     return adj
@@ -332,9 +424,34 @@ def load_adjustments() -> dict:
     if not ADJ_PATH.exists():
         return {}
     try:
-        return json.loads(ADJ_PATH.read_text(encoding="utf-8")).get("teams", {}) or {}
+        payload = json.loads(ADJ_PATH.read_text(encoding="utf-8"))
+        if not (payload.get("trained_through") or "").strip():
+            return {}
+        return payload.get("teams", {}) or {}
     except Exception:
         return {}
+
+
+def adjustment_artifact_status() -> dict:
+    """Report whether the persisted correction artifact is safe to apply."""
+    if not ADJ_PATH.exists():
+        return {"state": "missing", "applied": False, "reason": "修正文件不存在"}
+    try:
+        payload = json.loads(ADJ_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"state": "invalid", "applied": False, "reason": "修正文件无法解析"}
+    cutoff = (payload.get("trained_through") or "").strip()
+    if not cutoff:
+        return {
+            "state": "unversioned", "applied": False,
+            "reason": "旧版修正缺少训练截止日期，已忽略以避免与重训模型重复计数",
+        }
+    teams = payload.get("teams", {}) or {}
+    return {
+        "state": "active" if teams else "empty", "applied": bool(teams),
+        "reason": "修正已应用" if teams else "训练截止日期之后暂无新增修正",
+        "trained_through": cutoff[:10], "teams": len(teams),
+    }
 
 
 def save_adjustments(teams_adj: dict) -> None:
@@ -391,7 +508,8 @@ def recompute(base_model: EnsembleModel, with_news: bool = False,
               news_teams: list[str] | None = None) -> dict:
     """重算修正并落盘。base_model 必须是未修正模型(get_model(adjusted=False))。"""
     matches = _finished_wc_matches(trained_through())
-    result_adj = compute_result_deltas(base_model, matches)
+    from wc2026.analysis.imminent import load_all_prematch_snapshots
+    result_adj = compute_result_deltas(base_model, matches, snapshots=load_all_prematch_snapshots())
     if with_news:
         teams = news_teams if news_teams is not None else sorted(
             {m["home_team"] for m in matches} | {m["away_team"] for m in matches})

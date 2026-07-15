@@ -7,6 +7,14 @@ from wc2026.models.predictor import EnsembleModel
 
 
 class TeamStyleAdjustmentTest(unittest.TestCase):
+    def test_ensemble_exposes_dixon_coles_rho(self):
+        dc = DixonColesModel()
+        dc.rho = -0.075
+
+        model = EnsembleModel(dc, team_profiles={})
+
+        self.assertEqual(model.rho, -0.075)
+
     def test_style_profile_exposes_quantified_proxy_dimensions(self):
         p = style_profile("A", profiles={
             "A": {"formation": "4-3-3",

@@ -1,8 +1,4 @@
-"""赛前环境、适应性与国家背景分析。
-
-这些因素用于补充单场解释，不直接改写模型概率。政治/经济背景只做宏观语境提示，
-避免把场外关系当作可量化的硬胜负变量。
-"""
+"""赛前环境与场地适应性分析；只使用可验证的比赛相关因素。"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -11,6 +7,8 @@ from zoneinfo import ZoneInfo
 import numpy as np
 
 from wc2026.data.team_names import zh
+from wc2026.data.sources.weather import load_cached_weather
+from wc2026.analysis.fatigue import VENUES
 
 
 STADIUMS = {
@@ -43,71 +41,70 @@ STADIUMS = {
     },
 }
 
+VENUE_TIMEZONES = {
+    "Atlanta Stadium": "America/New_York",
+    "BC Place Vancouver": "America/Vancouver",
+    "Boston Stadium": "America/New_York",
+    "Dallas Stadium": "America/Chicago",
+    "Guadalajara Stadium": "America/Mexico_City",
+    "Houston Stadium": "America/Chicago",
+    "Kansas City Stadium": "America/Chicago",
+    "Los Angeles Stadium": "America/Los_Angeles",
+    "Mexico City Stadium": "America/Mexico_City",
+    "Miami Stadium": "America/New_York",
+    "Monterrey Stadium": "America/Monterrey",
+    "New York/New Jersey Stadium": "America/New_York",
+    "Philadelphia Stadium": "America/New_York",
+    "San Francisco Bay Area Stadium": "America/Los_Angeles",
+    "Seattle Stadium": "America/Los_Angeles",
+    "Toronto Stadium": "America/Toronto",
+}
+
 
 TEAM_CONTEXT = {
     "United States": {
-        "home_region": "北美",
         "timezone": "America/New_York",
         "altitude_home_m": 200,
         "climate": "美国队对北美长途旅行、低海拔和美式场馆环境更熟悉",
         "travel": "本土作战，后勤与场地熟悉度优势明显",
-        "country": "东道主之一，经济与体育产业基础强，主场关注度高",
     },
     "Paraguay": {
-        "home_region": "南美",
         "timezone": "America/Asuncion",
         "altitude_home_m": 120,
         "climate": "巴拉圭球员通常适应温暖环境，低海拔不是明显障碍",
         "travel": "跨洲北上，旅行距离和赛前适应安排更关键",
-        "country": "南美传统硬朗球队，整体国家体量与经济资源小于美国",
     },
     "Australia": {
-        "home_region": "大洋洲/亚洲赛区",
         "timezone": "Australia/Sydney",
         "altitude_home_m": 58,
         "climate": "长期跨洲比赛经验较多，但北美时差压力大",
         "travel": "远征距离长，倒时差和恢复管理很关键",
-        "country": "发达经济体，职业体育体系成熟，国家队远征经验丰富",
     },
     "Turkey": {
-        "home_region": "欧洲/西亚",
         "timezone": "Europe/Istanbul",
         "altitude_home_m": 39,
         "climate": "对温暖气候适应较好，北美西海岸需要倒时差",
         "travel": "跨大西洋远征，前期集训质量会影响比赛强度",
-        "country": "足球文化强，国内联赛强度较高，政治经济背景复杂但不直接决定比赛",
     },
     "Mexico": {
-        "home_region": "北美",
         "timezone": "America/Mexico_City",
         "altitude_home_m": 2240,
         "climate": "高原经验强，来到低海拔场地通常氧耗压力下降",
         "travel": "东道主之一，北美作战适应成本较低",
-        "country": "区域足球强国，主场球迷与北美旅行便利度较高",
     },
     "Canada": {
-        "home_region": "北美",
         "timezone": "America/Toronto",
         "altitude_home_m": 76,
         "climate": "更适应低温和温和环境，炎热天气下需关注消耗",
         "travel": "东道主之一，北美赛地后勤压力较小",
-        "country": "发达经济体，足球资源近年提升，阵容上限更多取决于球员状态",
     },
-}
-
-
-REGION_CONTEXT = {
-    "政治关系": "双方无直接隶属关系；若同属美洲体系，交流与区域影响更多体现在宏观背景，不等同于赛果优势。",
-    "国家实力与经济背景": "国家经济、体育产业和后勤资源会影响长期建设与备战保障，但单场仍主要由阵容、状态和战术决定。",
-    "国情与足球背景": "足球文化、旅欧球员数量、国内联赛强度和大赛经验，比宏观政治叙事更接近比赛层面的变量。",
-    "附庸/上下关系": "本模块不把国家间关系写成附庸判断；仅提示是否存在明显资源与区域影响力不对称。",
 }
 
 
 def match_environment_report(home: str, away: str, mat: np.ndarray, fixture: dict | None = None) -> dict:
     fixture = fixture or {}
     venue = fixture.get("location") or ""
-    stadium = STADIUMS.get(venue)
+    stadium = _stadium_info(venue)
     local_time = _local_kickoff(fixture.get("date_utc"), stadium)
     home_ctx = _team_context(home)
     away_ctx = _team_context(away)
@@ -118,19 +115,18 @@ def match_environment_report(home: str, away: str, mat: np.ndarray, fixture: dic
         _timezone_row(home, away, local_time, stadium, home_ctx, away_ctx),
         _stadium_row(stadium, venue),
         _altitude_row(stadium, home_ctx, away_ctx),
-        _weather_row(stadium),
+        _weather_row(stadium, load_cached_weather(venue, fixture.get("date_utc") or "")),
         _travel_row(home, away, home_ctx, away_ctx, home_score, away_score),
     ]
     adaptation = [
         _adaptation_row(home, home_ctx, home_score, stadium),
         _adaptation_row(away, away_ctx, away_score, stadium),
     ]
-    background = _background_rows(home, away, home_ctx, away_ctx)
     score_pick = _score_pick(mat, home_score, away_score)
     return {
         "environment": environment,
         "adaptation": adaptation,
-        "background": background,
+        "background": [],
         "score_pick": score_pick,
         "local_kickoff": local_time,
     }
@@ -138,13 +134,29 @@ def match_environment_report(home: str, away: str, mat: np.ndarray, fixture: dic
 
 def _team_context(team: str) -> dict:
     return TEAM_CONTEXT.get(team, {
-        "home_region": "暂无结构化资料",
         "timezone": "UTC",
         "altitude_home_m": None,
         "climate": "暂无该队气候适应资料，按中性处理",
         "travel": "暂无该队远征资料，按中性处理",
-        "country": "暂无该队国家背景资料，按中性处理",
     })
+
+
+def _stadium_info(venue: str) -> dict | None:
+    if venue in STADIUMS:
+        return STADIUMS[venue]
+    geo = VENUES.get(venue)
+    timezone_name = VENUE_TIMEZONES.get(venue)
+    if not geo or not timezone_name:
+        return None
+    return {
+        "name_zh": venue,
+        "city_zh": geo["city"],
+        "timezone": timezone_name,
+        "altitude_m": geo["alt"],
+        "surface": "草皮信息以赛事官方为准",
+        "climate": "静态气候不替代开球时段预报",
+        "weather_hint": "赛前刷新 Open-Meteo 天气后显示实时预报",
+    }
 
 
 def _parse_utc(value: str | None) -> datetime | None:
@@ -194,10 +206,20 @@ def _altitude_row(stadium: dict | None, home_ctx: dict, away_ctx: dict) -> dict:
     return {"factor": "海拔影响", "detail": detail, "impact": impact}
 
 
-def _weather_row(stadium: dict | None) -> dict:
+def _weather_row(stadium: dict | None, weather: dict | None = None) -> dict:
+    if weather:
+        detail = (f"{weather['temperature_c']:.1f}°C / 湿度 {weather['humidity_pct']:.0f}% / "
+                  f"降水概率 {weather['precipitation_probability_pct']:.0f}% / "
+                  f"风速 {weather['wind_kmh']:.1f} km/h")
+        return {"factor": "气温与天气", "detail": detail,
+                "impact": f"开球时段预报（{weather.get('forecast_time_utc', '—')} UTC）",
+                "source": weather.get("source", "Open-Meteo"),
+                "updated_at": weather.get("fetched_at")}
     if not stadium:
-        return {"factor": "气温与天气", "detail": "暂无球场气候资料", "impact": "赛前需结合实时天气"}
-    return {"factor": "气温与天气", "detail": stadium["climate"], "impact": stadium["weather_hint"]}
+        return {"factor": "气温与天气", "detail": "暂无球场气候资料", "impact": "赛前需结合实时天气",
+                "source": "无"}
+    return {"factor": "气温与天气", "detail": stadium["climate"], "impact": stadium["weather_hint"],
+            "source": "场馆静态气候资料"}
 
 
 def _travel_row(home: str, away: str, home_ctx: dict, away_ctx: dict,
@@ -239,25 +261,6 @@ def _adaptation_score(team: str, ctx: dict, stadium: dict | None) -> int:
     return max(25, min(95, score))
 
 
-def _background_rows(home: str, away: str, home_ctx: dict, away_ctx: dict) -> list[dict]:
-    asymmetry = "美国" in {zh(home), zh(away)}
-    relation = "同处美洲区域语境，政治/经贸联系存在但不构成足球层面的直接控制关系" if (
-        {home_ctx["home_region"], away_ctx["home_region"]} <= {"北美", "南美"}
-    ) else "跨区域对阵，政治关系更多是背景信息，不宜直接量化为胜负优势"
-    return [
-        {"factor": "政治关系", "summary": relation, "match_impact": REGION_CONTEXT["政治关系"]},
-        {"factor": "国家实力与经济背景",
-         "summary": f"{zh(home)}：{home_ctx['country']}；{zh(away)}：{away_ctx['country']}",
-         "match_impact": REGION_CONTEXT["国家实力与经济背景"]},
-        {"factor": "国情与足球背景",
-         "summary": f"{zh(home)}与{zh(away)}的足球强弱仍优先看模型、阵容、状态和战术匹配",
-         "match_impact": REGION_CONTEXT["国情与足球背景"]},
-        {"factor": "附庸/上下关系",
-         "summary": "存在资源与区域影响力不对称" if asymmetry else "暂无明确结构化上下关系信号",
-         "match_impact": REGION_CONTEXT["附庸/上下关系"]},
-    ]
-
-
 def _score_pick(mat: np.ndarray, home_score: int, away_score: int) -> dict:
     top = _top_scores(mat, 5)
     if home_score - away_score >= 6:
@@ -270,7 +273,7 @@ def _score_pick(mat: np.ndarray, home_score: int, away_score: int) -> dict:
     return {
         "score": f"{hi}-{ai}",
         "prob": prob,
-        "basis": "以模型最高比分为底座，叠加环境、时区、海拔、天气、远征和国家背景适应性后的参考比分",
+        "basis": "以模型最高比分为底座，叠加场地环境、时区、海拔、天气和旅行适应性后的参考比分",
     }
 
 

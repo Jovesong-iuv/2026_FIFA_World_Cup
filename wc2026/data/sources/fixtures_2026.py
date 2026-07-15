@@ -12,12 +12,19 @@ from datetime import datetime, timezone
 from time import sleep
 
 import requests
+import sqlite3
 
 from wc2026.config import settings
 from wc2026.data.db import get_conn
 from wc2026.data.team_names import to_lib
 
 FEED = "https://fixturedownload.com/feed/json/fifa-world-cup-2026"
+_RESULT_FIELDS = {
+    "home_score", "away_score", "regulation_home_score", "regulation_away_score",
+    "final_home_score", "final_away_score", "penalty_home_score", "penalty_away_score",
+    "result_status", "winner_team", "result_source", "source_event_id",
+    "result_fetched_at", "event_flags", "match_stats_json",
+}
 
 _REBUILD = """
 DROP TABLE IF EXISTS fixtures;
@@ -33,7 +40,20 @@ CREATE TABLE fixtures (
     location TEXT,
     predictable INTEGER DEFAULT 0,
     home_score INTEGER,
-    away_score INTEGER
+    away_score INTEGER,
+    regulation_home_score INTEGER,
+    regulation_away_score INTEGER,
+    final_home_score INTEGER,
+    final_away_score INTEGER,
+    penalty_home_score INTEGER,
+    penalty_away_score INTEGER,
+    result_status TEXT,
+    winner_team TEXT,
+    result_source TEXT,
+    source_event_id TEXT,
+    result_fetched_at TEXT,
+    event_flags TEXT,
+    match_stats_json TEXT
 );
 """
 
@@ -58,6 +78,11 @@ def _normalize_fixture_feed(data: list[dict], known: set[str]) -> list[dict]:
             "predictable": predictable,
             "home_score": m.get("HomeTeamScore"),
             "away_score": m.get("AwayTeamScore"),
+            "regulation_home_score": (m.get("HomeTeamScore") if int(m["RoundNumber"]) < 4 else None),
+            "regulation_away_score": (m.get("AwayTeamScore") if int(m["RoundNumber"]) < 4 else None),
+            "final_home_score": m.get("HomeTeamScore"),
+            "final_away_score": m.get("AwayTeamScore"),
+            "winner_team": to_lib(m.get("Winner") or "") or None,
             "data_source": "live_fixture_feed",
             "fetched_at": fetched_at,
         })
@@ -86,7 +111,10 @@ def merge_fixture_snapshots(cached: list[dict], live: list[dict]) -> list[dict]:
     for fresh in live:
         match_number = int(fresh["match_number"])
         row = merged.setdefault(match_number, {})
+        preserve_espn_result = row.get("result_source") == "ESPN"
         for key, value in fresh.items():
+            if preserve_espn_result and key in _RESULT_FIELDS:
+                continue
             if value is not None and value != "":
                 row[key] = value
         row["match_number"] = match_number
@@ -94,15 +122,31 @@ def merge_fixture_snapshots(cached: list[dict], live: list[dict]) -> list[dict]:
 
 
 def fetch_and_store_fixtures() -> dict:
-    fixtures = fetch_fixture_snapshot()
-    rows = [(
-        f["match_number"], f["round_number"], f["date_utc"],
-        f["home_src"], f["away_src"], f["home_team"], f["away_team"],
-        f.get("group_name"), f.get("location"), f["predictable"],
-        f.get("home_score"), f.get("away_score"),
-    ) for f in fixtures]
+    live = fetch_fixture_snapshot()
     with get_conn() as conn:
+        try:
+            cached = [dict(row) for row in conn.execute("SELECT * FROM fixtures").fetchall()]
+        except sqlite3.OperationalError:
+            cached = []
+        fixtures = merge_fixture_snapshots(cached, live)
+        rows = []
+        for f in fixtures:
+            has_result = f.get("home_score") is not None and f.get("away_score") is not None
+            rows.append((
+                f["match_number"], f["round_number"], f["date_utc"],
+                f["home_src"], f["away_src"], f["home_team"], f["away_team"],
+                f.get("group_name"), f.get("location"), f["predictable"],
+                f.get("home_score"), f.get("away_score"),
+                f.get("regulation_home_score"), f.get("regulation_away_score"),
+                f.get("final_home_score"), f.get("final_away_score"),
+                f.get("penalty_home_score"), f.get("penalty_away_score"),
+                f.get("result_status"), f.get("winner_team"),
+                f.get("result_source") or ("fixturedownload" if has_result else None),
+                f.get("source_event_id"),
+                f.get("result_fetched_at") or (f.get("fetched_at") if has_result else None),
+                f.get("event_flags"), f.get("match_stats_json"),
+            ))
         conn.executescript(_REBUILD)
         conn.executemany(
-            "INSERT INTO fixtures VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+            "INSERT INTO fixtures VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     return {"fixtures": len(rows), "predictable": sum(r[9] for r in rows)}

@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from wc2026.analysis import clemente
 from wc2026.backtest.runner import prob_metrics
 from wc2026.data import odds_history
+from wc2026.data.results import regulation_score
 from wc2026.data.team_names import zh
 from wc2026.markets import derive, value
 
@@ -41,6 +42,47 @@ def actual_outcome(home_score, away_score) -> str | None:
     if home_score is None or away_score is None:
         return None
     return "home" if home_score > away_score else ("draw" if home_score == away_score else "away")
+
+
+def scoreline_comparison(top_scores: list[dict] | None, home_score, away_score) -> dict:
+    """Compare a locked Top 3 score list with the regulation-time result."""
+    if home_score is None or away_score is None:
+        return {"available": False, "reason": "无可验证的90分钟比分"}
+    candidates = top_scores or []
+    if not candidates:
+        return {"available": False, "reason": "无赛前锁定 Top 3 比分"}
+    if len(candidates) != 3:
+        return {"available": False, "reason": "赛前快照未包含三个有效比分"}
+    rows = []
+    for item in candidates:
+        try:
+            home, away = (int(x) for x in str(item.get("score", "")).split("-", 1))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        rows.append({**item, "home_score": home, "away_score": away})
+    if len(rows) != 3:
+        return {"available": False, "reason": "赛前快照未包含三个有效比分"}
+
+    hs, as_ = int(home_score), int(away_score)
+    distances = [abs(r["home_score"] - hs) + abs(r["away_score"] - as_) for r in rows]
+    nearest_index = min(range(len(rows)), key=distances.__getitem__)
+    nearest = rows[nearest_index]
+    hit_rank = next((i + 1 for i, r in enumerate(rows)
+                     if r["home_score"] == hs and r["away_score"] == as_), None)
+    return {
+        "available": True,
+        "actual_score": f"{hs}-{as_}",
+        "top_scores": [{k: v for k, v in r.items() if k not in {"home_score", "away_score"}}
+                       for r in rows],
+        "top1_hit": hit_rank == 1,
+        "top3_hit": hit_rank is not None,
+        "hit_rank": hit_rank,
+        "nearest_score": nearest["score"],
+        "min_score_distance": distances[nearest_index],
+        "home_goal_error": hs - nearest["home_score"],
+        "away_goal_error": as_ - nearest["away_score"],
+        "total_goal_error": (hs + as_) - (nearest["home_score"] + nearest["away_score"]),
+    }
 
 
 def _model_probs(model, home, away, neutral, fixture, fixtures, snapshot):
@@ -139,7 +181,8 @@ def _event_flags(entry: dict | None) -> list[str]:
 def _model_update_signal(audit: dict, fixture: dict, entry: dict | None) -> dict:
     """把赛后偏差分成：实力偏差 / 对位偏差 / 随机事件 / 无需修正。"""
     home, away = audit["match"]["home"], audit["match"]["away"]
-    hs, as_ = int(fixture.get("home_score") or 0), int(fixture.get("away_score") or 0)
+    score = regulation_score(fixture)
+    hs, as_ = score if score is not None else (0, 0)
     h_proc, a_proc = _team_process(entry, home), _team_process(entry, away)
     flags = _event_flags(entry)
     notes = []
@@ -286,6 +329,7 @@ def _learning_feedback(home: str, away: str, score: str | None, adjustments: dic
     actual = src.get("actual", {})
     predicted = src.get("predicted", {})
     errors = src.get("errors", {})
+    scoreline = src.get("scoreline_calibration") or {}
     home_delta = team_delta(home, "home", home_src)
     away_delta = team_delta(away, "away", away_src)
     outcome_text = "命中" if not errors.get("outcome_missed") else "未命中"
@@ -305,12 +349,14 @@ def _learning_feedback(home: str, away: str, score: str | None, adjustments: dic
         "predicted": predicted,
         "errors": errors,
         "goal_calibration": src.get("goal_calibration", {}),
+        "scoreline": scoreline,
         "style": src.get("style", {}),
         "weights": {
             "final": src.get("weight"),
             "event": src.get("event_weight"),
             "process": src.get("process_weight"),
             "time_decay": src.get("time_decay"),
+            "scoreline": scoreline.get("weight"),
             "notes": src.get("weight_notes", []),
         },
         "teams": {"home": home_delta, "away": away_delta},
@@ -321,8 +367,12 @@ def match_audit(model, fixture, *, neutral=True, fixtures=None, snapshot=None, c
                 insights=None, adjustments=None) -> dict:
     """单场赛后审计三方对比。fixture 需含 home_team/away_team/home_score/away_score/date_utc。"""
     home, away = fixture["home_team"], fixture["away_team"]
-    hs, as_ = fixture.get("home_score"), fixture.get("away_score")
+    score = regulation_score(fixture)
+    hs, as_ = score if score is not None else (None, None)
     actual = actual_outcome(hs, as_)
+    final_h, final_a = fixture.get("final_home_score"), fixture.get("final_away_score")
+    if final_h is None or final_a is None:
+        final_h, final_a = fixture.get("home_score"), fixture.get("away_score")
 
     m_probs, m_src, locked_at = _model_probs(model, home, away, neutral, fixture, fixtures, snapshot)
     mk_probs, captured_at, mk_odds = _market_probs(home, away, fixture.get("date_utc"), conn=conn)
@@ -339,7 +389,12 @@ def match_audit(model, fixture, *, neutral=True, fixtures=None, snapshot=None, c
         "match": {"home": home, "away": away, "home_cn": zh(home), "away_cn": zh(away),
                   "match_number": fixture.get("match_number"),
                   "kickoff_utc": fixture.get("date_utc"),
-                  "score": (f"{hs}-{as_}" if actual else None)},
+                  "score": (f"{hs}-{as_}" if actual else None),
+                  "score_basis": "90分钟",
+                  "final_score": (f"{final_h}-{final_a}"
+                                  if final_h is not None and final_a is not None else None),
+                  "result_status": fixture.get("result_status"),
+                  "result_source": fixture.get("result_source")},
         "stage": _stage(fixture),
         "finished": actual is not None,
         "actual": actual,
@@ -353,6 +408,8 @@ def match_audit(model, fixture, *, neutral=True, fixtures=None, snapshot=None, c
         },
         "rows": rows,
     }
+    out["scoreline"] = scoreline_comparison(
+        (snapshot or {}).get("top_scores"), hs, as_)
     if mk_probs:
         mk_pick = _pick(mk_probs)
         out["market"] = {
@@ -412,8 +469,7 @@ def audit_summary(model, fixtures, *, neutral=True, snapshots=None, conn=None, i
 
     snapshots: {match_number: snapshot_dict}（赛前锁定）；缺失的场次模型用事后复算。"""
     snapshots = snapshots or {}
-    finished = [f for f in fixtures
-                if actual_outcome(f.get("home_score"), f.get("away_score")) is not None]
+    finished = [f for f in fixtures if regulation_score(f) is not None]
     audits, model_recs, market_recs = [], [], []
     n_snapshot = 0
     for f in finished:
@@ -435,11 +491,28 @@ def audit_summary(model, fixtures, *, neutral=True, snapshots=None, conn=None, i
         "n_with_market": len(market_recs),
         "scope": _scope(audits),
         "model_metrics": model_metrics,
+        "scoreline_metrics": _scoreline_metrics(audits),
         "market_metrics": market_metrics,
         "comparison": _compare(model_metrics, market_metrics),
         "matches": audits,
         "note": ("模型概率优先用赛前锁定快照；无快照的场次用当前模型事后复算"
-                 "（模型已含该场赛果，存在数据泄漏，仅供参考）。市场仅作基准对比，不参与建模。"),
+                 "（模型已含该场赛果，存在数据泄漏，仅供参考）。Top 3 比分只统计赛前锁定样本；"
+                 "淘汰赛统一采用90分钟比分，不含加时与点球。市场仅作基准对比，不参与建模。"),
+    }
+
+
+def _scoreline_metrics(audits: list[dict]) -> dict:
+    rows = [a["scoreline"] for a in audits if a.get("scoreline", {}).get("available")]
+    if not rows:
+        return {"n": 0, "top1_accuracy": 0.0, "top3_accuracy": 0.0,
+                "mean_min_distance": None, "mean_abs_total_goal_error": None}
+    n = len(rows)
+    return {
+        "n": n,
+        "top1_accuracy": sum(bool(r["top1_hit"]) for r in rows) / n,
+        "top3_accuracy": sum(bool(r["top3_hit"]) for r in rows) / n,
+        "mean_min_distance": sum(r["min_score_distance"] for r in rows) / n,
+        "mean_abs_total_goal_error": sum(abs(r["total_goal_error"]) for r in rows) / n,
     }
 
 

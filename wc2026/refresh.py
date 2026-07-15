@@ -5,12 +5,15 @@ import time
 from collections.abc import Callable
 
 from wc2026.analysis.adjustments import recompute
-from wc2026.analysis.match_insights import INSIGHTS_PATH, load_insights, refresh_match_insight
+from wc2026.analysis.match_insights import (_espn_match_rows, INSIGHTS_PATH, load_insights,
+                                            refresh_match_insight)
 from wc2026.data.db import init_db
 from wc2026.data.db import get_conn
 from wc2026.data.ingest import ingest_international_results
 from wc2026.data.results import backfill_fixture_scores, export_results_json
 from wc2026.data.sources.fixtures_2026 import fetch_and_store_fixtures
+from wc2026.data.sources.espn import refresh_fixture_results as refresh_espn_fixture_results
+from wc2026.data.sources.weather import refresh_upcoming_weather
 from wc2026.data.sources.live_results import search_match_result
 from wc2026.models.predictor import get_model, train_and_save
 
@@ -35,17 +38,29 @@ def _run_step(name: str, label: str, fn: Callable, *, critical: bool = False) ->
 def _finished_knockout_fixtures() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT match_number, home_team, away_team FROM fixtures "
+            "SELECT match_number, home_team, away_team, match_stats_json, result_fetched_at FROM fixtures "
             "WHERE predictable=1 AND round_number>=4 AND home_score IS NOT NULL "
             "AND away_score IS NOT NULL ORDER BY date_utc"
         ).fetchall()
     return [dict(r) for r in rows]
 
 
-def _has_match_insight(home: str, away: str, *, path=INSIGHTS_PATH) -> bool:
+def _has_match_insight(home: str, away: str, *, path=INSIGHTS_PATH,
+                       fixture: dict | None = None) -> bool:
     matches = load_insights(path).get("matches", {})
     entry = matches.get(f"{home}::{away}") or matches.get(f"{away}::{home}") or {}
-    return bool(entry.get("data_as_of"))
+    if not entry.get("data_as_of"):
+        return False
+    available_espn = {row["team"] for row in _espn_match_rows(home, away, fixture)}
+    if not available_espn:
+        return True
+    cached_espn = {row.get("team") for row in entry.get("prior_matches", [])
+                   if row.get("source") == "ESPN单场"}
+    if not available_espn.issubset(cached_espn):
+        return False
+    source_time = (fixture or {}).get("result_fetched_at") or ""
+    cached_time = entry.get("stats_fetched_at") or ""
+    return not source_time or (bool(cached_time) and cached_time >= source_time)
 
 
 def refresh_knockout_postmatch_insights(*, path=INSIGHTS_PATH, force: bool = False) -> dict:
@@ -53,11 +68,12 @@ def refresh_knockout_postmatch_insights(*, path=INSIGHTS_PATH, force: bool = Fal
     rows = _finished_knockout_fixtures()
     ok, failed, skipped, errors = 0, 0, 0, []
     for r in rows:
-        if not force and _has_match_insight(r["home_team"], r["away_team"], path=path):
+        if not force and _has_match_insight(
+                r["home_team"], r["away_team"], path=path, fixture=r):
             skipped += 1
             continue
         try:
-            res = refresh_match_insight(r["home_team"], r["away_team"], path=path)
+            res = refresh_match_insight(r["home_team"], r["away_team"], path=path, fixture=r)
             if res.get("ok"):
                 ok += 1
             else:
@@ -130,8 +146,18 @@ def resilient_refresh(*, with_news: bool = False) -> dict:
 
     steps.append(_run_step("history", "抓取国际赛历史结果", ingest_international_results))
     steps.append(_run_step("fixtures", "更新 2026 赛程", fetch_and_store_fixtures))
+
+    def weather():
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT match_number, date_utc, location FROM fixtures WHERE predictable=1"
+            ).fetchall()
+        return refresh_upcoming_weather([dict(row) for row in rows])
+
+    steps.append(_run_step("weather", "Open-Meteo补全开球时段天气", weather))
+    steps.append(_run_step("espn_results", "ESPN补全90分钟赛果与单场统计",
+                           refresh_espn_fixture_results))
     steps.append(_run_step("backfill", "回填 fixtures 赛果", backfill_fixture_scores))
-    steps.append(_run_step("live_scores", "联网补全世界杯赛果", refresh_live_fixture_scores))
     steps.append(_run_step("export", "导出 data/wc_results.json", export_results_json))
 
     trained_model = None

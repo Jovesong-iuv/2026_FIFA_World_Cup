@@ -14,6 +14,26 @@ from wc2026.config import settings
 from wc2026.data.db import get_conn
 
 RESULTS_JSON = settings.data_dir / "wc_results.json"
+RESULT_METADATA = (
+    "regulation_home_score", "regulation_away_score", "final_home_score", "final_away_score",
+    "penalty_home_score", "penalty_away_score", "result_status", "winner_team",
+    "result_source", "source_event_id", "result_fetched_at", "event_flags", "match_stats_json",
+)
+
+
+def regulation_score(fixture: dict) -> tuple[int, int] | None:
+    """Return a verified regulation-time score; never infer it from an unknown knockout total."""
+    rh, ra = fixture.get("regulation_home_score"), fixture.get("regulation_away_score")
+    if rh is not None and ra is not None:
+        return int(rh), int(ra)
+    try:
+        knockout = int(fixture.get("round_number") or 0) >= 4
+    except (TypeError, ValueError):
+        knockout = False
+    if knockout:
+        return None
+    home, away = fixture.get("home_score"), fixture.get("away_score")
+    return (int(home), int(away)) if home is not None and away is not None else None
 
 _LOOKUP = (
     "SELECT home_score, away_score FROM matches "
@@ -45,23 +65,38 @@ def export_results_json(path: Path | None = None, conn=None) -> int:
     out = Path(path) if path else RESULTS_JSON
     cm = nullcontext(conn) if conn is not None else get_conn()
     with cm as c:
+        available = {r[1] for r in c.execute("PRAGMA table_info(fixtures)")}
+        metadata = [name for name in RESULT_METADATA if name in available]
+        columns = ["match_number", "home_score", "away_score", *metadata]
         rows = c.execute(
-            "SELECT match_number, home_score, away_score FROM fixtures "
+            f"SELECT {','.join(columns)} FROM fixtures "
             "WHERE home_score IS NOT NULL AND away_score IS NOT NULL").fetchall()
-    data = {str(r["match_number"]): [r["home_score"], r["away_score"]] for r in rows}
+    data = {}
+    for row in rows:
+        extra = {name: row[name] for name in metadata if row[name] is not None}
+        data[str(row["match_number"])] = ({"home_score": row["home_score"],
+                                           "away_score": row["away_score"], **extra}
+                                          if extra else [row["home_score"], row["away_score"]])
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"results": data}, ensure_ascii=False, indent=2), encoding="utf-8")
     return len(data)
 
 
 def load_results_overlay(path: Path | None = None) -> dict:
-    """读取 wc_results.json → {match_number(int): (home_score, away_score)}；缺失返回 {}。"""
+    """Read old score arrays and new result metadata objects."""
     src = Path(path) if path else RESULTS_JSON
     if not src.exists():
         return {}
     try:
         data = json.loads(src.read_text(encoding="utf-8")).get("results", {})
-        return {int(k): (v[0], v[1]) for k, v in data.items() if isinstance(v, list) and len(v) == 2}
+        out = {}
+        for key, value in data.items():
+            if isinstance(value, list) and len(value) == 2:
+                out[int(key)] = (value[0], value[1])
+            elif isinstance(value, dict) and value.get("home_score") is not None \
+                    and value.get("away_score") is not None:
+                out[int(key)] = dict(value)
+        return out
     except Exception:
         return {}
 
@@ -78,7 +113,12 @@ def apply_results_overlay(fixtures: list[dict], path: Path | None = None) -> lis
             out.append(row)
             continue
         score = overlay.get(int(row["match_number"])) if row.get("match_number") is not None else None
-        if score and (row.get("home_score") is None or row.get("away_score") is None):
-            row["home_score"], row["away_score"] = score
+        if isinstance(score, tuple):
+            if row.get("home_score") is None or row.get("away_score") is None:
+                row["home_score"], row["away_score"] = score
+        elif isinstance(score, dict):
+            for key, value in score.items():
+                if value is not None and row.get(key) is None:
+                    row[key] = value
         out.append(row)
     return out

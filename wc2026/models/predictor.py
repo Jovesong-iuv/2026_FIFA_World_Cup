@@ -72,6 +72,10 @@ class EnsembleModel:
     def home_adv(self):
         return self.dc.home_adv
 
+    @property
+    def rho(self):
+        return self.dc.rho
+
     def has_team(self, t):
         return self.dc.has_team(t)
 

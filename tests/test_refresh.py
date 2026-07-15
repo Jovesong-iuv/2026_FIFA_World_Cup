@@ -64,8 +64,9 @@ class ResilientRefreshTest(unittest.TestCase):
 
         with patch("wc2026.refresh.ingest_international_results", fail("history")), \
                 patch("wc2026.refresh.fetch_and_store_fixtures", fail("fixtures")), \
+                patch("wc2026.refresh.refresh_upcoming_weather", ok("weather", {"updated": 0})), \
+                patch("wc2026.refresh.refresh_espn_fixture_results", ok("espn_results", {"updated": 0})), \
                 patch("wc2026.refresh.backfill_fixture_scores", ok("backfill", 2)), \
-                patch("wc2026.refresh.refresh_live_fixture_scores", ok("live_scores", {"updated": 0})), \
                 patch("wc2026.refresh.export_results_json", ok("export", 2)), \
                 patch("wc2026.refresh.train_and_save", ok("train", SimpleNamespace(teams=["A"]))), \
                 patch("wc2026.refresh.refresh_knockout_postmatch_insights", ok("knockout_review", {"matches": 0})), \
@@ -73,17 +74,19 @@ class ResilientRefreshTest(unittest.TestCase):
             result = resilient_refresh()
 
         self.assertEqual(result["status"], "partial")
-        self.assertEqual(calls, ["history", "fixtures", "backfill", "live_scores", "export", "train",
+        self.assertEqual(calls, ["history", "fixtures", "weather", "espn_results", "backfill", "export", "train",
                                  "knockout_review", "adjustments"])
         self.assertFalse(result["steps"][0]["ok"])
         self.assertFalse(result["steps"][1]["ok"])
         self.assertTrue(result["steps"][2]["ok"])
+        self.assertNotIn("live_scores", [step["name"] for step in result["steps"]])
 
     def test_refresh_skips_adjustments_when_training_failed_and_no_cached_model(self):
         with patch("wc2026.refresh.ingest_international_results", return_value={"new": 0}), \
                 patch("wc2026.refresh.fetch_and_store_fixtures", return_value={"fixtures": 104}), \
+                patch("wc2026.refresh.refresh_upcoming_weather", return_value={"updated": 0}), \
+                patch("wc2026.refresh.refresh_espn_fixture_results", return_value={"updated": 0}), \
                 patch("wc2026.refresh.backfill_fixture_scores", return_value=0), \
-                patch("wc2026.refresh.refresh_live_fixture_scores", return_value={"updated": 0}), \
                 patch("wc2026.refresh.export_results_json", return_value=0), \
                 patch("wc2026.refresh.train_and_save", side_effect=RuntimeError("train failed")), \
                 patch("wc2026.refresh.refresh_knockout_postmatch_insights", return_value={"matches": 0}), \
@@ -105,8 +108,9 @@ class ResilientRefreshTest(unittest.TestCase):
 
         with patch("wc2026.refresh.ingest_international_results", mark("history", {"new": 0})), \
                 patch("wc2026.refresh.fetch_and_store_fixtures", mark("fixtures", {"fixtures": 104})), \
+                patch("wc2026.refresh.refresh_upcoming_weather", mark("weather", {"updated": 1})), \
+                patch("wc2026.refresh.refresh_espn_fixture_results", mark("espn_results", {"updated": 1})), \
                 patch("wc2026.refresh.backfill_fixture_scores", mark("backfill", 1)), \
-                patch("wc2026.refresh.refresh_live_fixture_scores", mark("live_scores", {"updated": 0})), \
                 patch("wc2026.refresh.export_results_json", mark("export", 1)), \
                 patch("wc2026.refresh.train_and_save", mark("train", SimpleNamespace(teams=["A"]))), \
                 patch("wc2026.refresh.refresh_knockout_postmatch_insights",
@@ -137,7 +141,33 @@ class ResilientRefreshTest(unittest.TestCase):
         self.assertEqual(result["matches"], 2)
         self.assertEqual(result["skipped"], 1)
         self.assertEqual(result["processed"], 1)
-        refresh.assert_called_once_with("C", "D", path=path)
+        refresh.assert_called_once_with(
+            "C", "D", path=path,
+            fixture={"match_number": 2, "home_team": "C", "away_team": "D"},
+        )
+
+    def test_knockout_review_upgrades_cached_entry_when_espn_stats_arrive(self):
+        with TemporaryDirectory() as d:
+            path = Path(d) / "match_insights.json"
+            path.write_text(
+                '{"matches":{"A::B":{"data_as_of":"2026-07-01",'
+                '"prior_matches":[{"team":"A","source":"FBref聚合"}]}}}',
+                encoding="utf-8",
+            )
+            fixture = {
+                "match_number": 1, "home_team": "A", "away_team": "B",
+                "match_stats_json": '{"A":{"shots":12},"B":{"shots":8}}',
+                "result_fetched_at": "2026-07-02T03:00:00+00:00",
+            }
+
+            with patch("wc2026.refresh._finished_knockout_fixtures", return_value=[fixture]), \
+                    patch("wc2026.refresh.refresh_match_insight",
+                          return_value={"ok": True}) as refresh:
+                result = refresh_knockout_postmatch_insights(path=path)
+
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(result["skipped"], 0)
+        refresh.assert_called_once_with("A", "B", path=path, fixture=fixture)
 
 
 if __name__ == "__main__":

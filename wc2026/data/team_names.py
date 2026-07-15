@@ -18,6 +18,7 @@ ALIAS = {
     "Congo DR": "DR Congo",
     "Côte d'Ivoire": "Ivory Coast",
     "Bosnia & Herzegovina": "Bosnia and Herzegovina",
+    "Bosnia-Herzegovina": "Bosnia and Herzegovina",
 }
 
 # 库名 → 中文（覆盖 2026 参赛队 + 常见强队；缺失则回退英文原名）

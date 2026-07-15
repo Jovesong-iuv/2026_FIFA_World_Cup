@@ -16,7 +16,8 @@ import streamlit.components.v1 as components
 
 from wc2026 import auth
 from wc2026.config import settings
-from wc2026.data.db import get_conn
+from wc2026.data.db import get_conn, init_db
+from wc2026.data.results import apply_results_overlay
 from wc2026.data.ingest import ingest_international_results
 from wc2026.data.sources import news as news_mod
 from wc2026.data.sources.fixtures_2026 import (fetch_fixture_snapshot,
@@ -1748,26 +1749,20 @@ def load_live_fixture_state() -> dict:
 
 @st.cache_data(ttl=300)
 def load_fixtures():
+    init_db()
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT match_number, round_number, date_utc, home_src, away_src, home_team, away_team, "
-            "group_name, location, predictable, home_score, away_score "
+            "group_name, location, predictable, home_score, away_score, regulation_home_score, "
+            "regulation_away_score, final_home_score, final_away_score, penalty_home_score, "
+            "penalty_away_score, result_status, winner_team, result_source, source_event_id, "
+            "result_fetched_at, event_flags, match_stats_json "
             "FROM fixtures ORDER BY date_utc"
         ).fetchall()
     fixtures = merge_fixture_snapshots(
         [dict(r) for r in rows], load_live_fixture_state()["fixtures"])
     fixtures = [f for f in fixtures if f.get("predictable") == 1]
-    # 叠加已提交的赛果（部署服务器 DB 可能无比分时仍能显示）
-    try:
-        from wc2026.data.results import load_results_overlay
-        overlay = load_results_overlay()
-        if overlay:
-            for f in fixtures:
-                if f.get("home_score") is None and f["match_number"] in overlay:
-                    f["home_score"], f["away_score"] = overlay[f["match_number"]]
-    except Exception:
-        pass
-    return fixtures
+    return apply_results_overlay(fixtures)
 
 
 def _get_wc_teams(model, fixtures):
@@ -2129,11 +2124,15 @@ def _standings_table_html(group: str, rows: list[dict], state: dict | None = Non
 
 def _adjustments_expander() -> None:
     """展示当前赛中实力修正明细(各队 δ + 依据)，可回滚说明。"""
-    from wc2026.analysis.adjustments import load_adjustments
+    from wc2026.analysis.adjustments import adjustment_artifact_status, load_adjustments
     adj = load_adjustments()
+    artifact = adjustment_artifact_status()
     with st.expander(f"🔧 赛中实力修正明细（{len(adj)} 支球队）", expanded=False):
         if not adj:
-            st.caption("暂无修正：尚无超出训练快照的完赛结果，或已重置。预测使用赛前模型。")
+            if artifact["state"] == "unversioned":
+                st.warning(artifact["reason"])
+            else:
+                st.caption("暂无修正：尚无超出训练快照的完赛结果，或已重置。预测使用赛前模型。")
             return
         rows = sorted(adj.items(), key=lambda kv: abs(kv[1].get("elo", 0)), reverse=True)
         st.dataframe(pd.DataFrame([{
@@ -2251,7 +2250,7 @@ def render_group_stage(model) -> None:
     st.markdown(f'<div class="wc-group-grid">{groups_html}</div>', unsafe_allow_html=True)
     st.caption("⚽ 小组出线概率会随每轮赛果快速变化；末轮尤其注意战意差异：已出线可能轮换、已淘汰战意下降、"
                "积分相近可能更保守。排序近似 积分>净胜球>进球数，未完全实现相互战绩等次级规则；"
-               "未显示 FIFA 排名（项目暂无该数据源）。")
+               "FIFA 官方排名用于球队信息展示，不直接改写小组赛蒙特卡洛概率。")
 
     st.markdown("---")
     section_title("🏆 整届夺冠 / 进决赛概率")
@@ -3049,6 +3048,15 @@ def render_audit(model) -> None:
                f"其中赛前锁定快照 {summary['n_with_snapshot']}/{summary['n_finished']} 场，"
                "其余为事后复算（当前模型已含赛果，仅参考）。")
 
+    sm = summary["scoreline_metrics"]
+    st.markdown("**赛前 Top 3 比分校准（90 分钟）**")
+    s1, s2, s3, s4 = st.columns(4)
+    s1.metric("可审计场次", sm["n"])
+    s2.metric("首选比分命中", f"{sm['top1_accuracy']:.0%}" if sm["n"] else "—")
+    s3.metric("Top 3 命中", f"{sm['top3_accuracy']:.0%}" if sm["n"] else "—")
+    s4.metric("平均比分距离", f"{sm['mean_min_distance']:.2f}" if sm["n"] else "—")
+    st.caption("只统计赛前已锁定三个推荐比分的比赛；淘汰赛统一采用 90 分钟含伤停补时比分，不含加时与点球。")
+
     cmp = summary["comparison"]
     if cmp.get("enabled"):
         st.markdown("**模型 vs 市场（赔率基准）**")
@@ -3069,15 +3077,26 @@ def render_audit(model) -> None:
     table = []
     for a in summary["matches"]:
         m, mk = a["model"], a["market"]
+        scoreline = a.get("scoreline") or {}
+        top_scores = scoreline.get("top_scores") or []
+        score_hit = (f"第 {scoreline['hit_rank']} 位命中" if scoreline.get("top3_hit") else
+                     "未命中" if scoreline.get("available") else "无锁定快照")
         table.append({
             "比赛": f"{a['match']['home_cn']} vs {a['match']['away_cn']}",
             "阶段": a.get("stage", {}).get("label", "—"),
-            "比分": a["match"]["score"], "实际": a["actual_cn"],
+            "推荐比分 Top 3": " / ".join(r["score"] for r in top_scores) or "—",
+            "90分钟比分": a["match"]["score"],
+            "比分命中": score_hit,
+            "最小距离": scoreline.get("min_score_distance", "—"),
+            "终场比分": (a["match"].get("final_score")
+                         if a["match"].get("final_score") != a["match"]["score"] else "—"),
+            "实际": a["actual_cn"],
             "模型预测": f"{m['pick_cn']} {m['probs'][m['pick']]:.0%}",
             "模型": "✅" if m["hit"] else "❌",
             "市场预测": (mk["pick_cn"] if mk.get("enabled") else "—"),
             "市场": (("✅" if mk["hit"] else "❌") if mk.get("enabled") else "—"),
             "学习修正": "已入账" if (a.get("learning") or {}).get("enabled") else "待重算",
+            "赛果来源": a["match"].get("result_source") or "本地赛果",
             "数据": "锁定" if m["source"] == "赛前锁定快照" else "复算",
         })
     st.dataframe(pd.DataFrame(table), hide_index=True, width="stretch")
@@ -3088,6 +3107,14 @@ def render_audit(model) -> None:
                         f"{a['match']['away_cn']}**：{a['verdict']}")
             review = a.get("postmatch_review") or {}
             learning = a.get("learning") or {}
+            scoreline = a.get("scoreline") or {}
+            if scoreline.get("available"):
+                _scores = "、".join(r["score"] for r in scoreline.get("top_scores", []))
+                _hit = (f"第 {scoreline['hit_rank']} 位命中" if scoreline.get("top3_hit") else "未命中")
+                st.markdown(f"  - Top 3 对比：{_scores}；实际 {scoreline['actual_score']}（90分钟）；"
+                            f"{_hit}，最小比分距离 {scoreline['min_score_distance']}。")
+            else:
+                st.markdown(f"  - Top 3 对比：{scoreline.get('reason', '无赛前锁定比分')}。")
             if learning.get("enabled"):
                 pred = learning.get("predicted", {})
                 err = learning.get("errors", {})
@@ -3108,7 +3135,8 @@ def render_audit(model) -> None:
                     "  - 校准权重："
                     f"{goal_cal.get('label', '总进球校准未知')}；"
                     f"事件 {weights.get('event', '—')} × 过程 {weights.get('process', '—')} × "
-                    f"时间 {weights.get('time_decay', '—')} = 最终 {weights.get('final', '—')}。"
+                    f"时间 {weights.get('time_decay', '—')} × 比分 {weights.get('scoreline', '—')} "
+                    f"= 最终 {weights.get('final', '—')}。"
                 )
                 if weights.get("notes"):
                     st.markdown("  - 权重依据：" + "；".join(weights["notes"][:3]))
@@ -3742,14 +3770,14 @@ with uc1:
 with uc2:
     for f in ui["factors"]:
         st.markdown(f"- **{f['name']}**：{f['detail']}")
-st.caption("爆冷指数衡量「把热门方当稳胆」的风险，不预测弱队一定爆冷；指数越高，越不适合作为无脑稳胆。"
-           "暂未纳入伤停 / 海拔 / 时差 / 历史大赛不稳定性（项目无对应结构化数据源）。")
+st.caption("爆冷指数衡量「把热门方当稳胆」的风险，不预测弱队一定爆冷；当前只量化胜平负、近期防守和战意。"
+           "伤停、海拔、时差与天气在独立风险模块展示，避免重复计权。")
 
-section_title("赛前环境与背景适应性")
+section_title("赛前环境与场地适应性")
 env_score = env_report["score_pick"]
 ec1, ec2 = st.columns([1, 3])
 with ec1:
-    st.metric("环境/背景参考比分", env_score["score"], f"{env_score['prob']:.1%}", delta_color="off")
+    st.metric("环境参考比分", env_score["score"], f"{env_score['prob']:.1%}", delta_color="off")
     st.caption(env_score["basis"])
 with ec2:
     st.dataframe(pd.DataFrame(env_report["environment"]), hide_index=True, width="stretch")
@@ -3769,14 +3797,9 @@ if _mf["home"] and _mf["away"]:
         st.markdown(f"- {_n}")
     st.caption("休息天数/旅行公里按赛程与场馆经纬度计算；海拔为承办城市公开数据。方向性体能提示，不改写概率。")
 
-ad1, ad2 = st.columns([1, 1])
-with ad1:
-    st.caption("球队适应性")
-    st.dataframe(pd.DataFrame(env_report["adaptation"]), hide_index=True, width="stretch")
-with ad2:
-    st.caption("国家背景关系")
-    st.dataframe(pd.DataFrame(env_report["background"]), hide_index=True, width="stretch")
-st.caption("说明：该模块参考时区、球场、海拔、气候、远征和宏观国家背景做定性补充；政治/经济关系不作为直接胜负变量，赛果仍以模型概率、阵容状态和临场信息为主。")
+st.caption("球队适应性")
+st.dataframe(pd.DataFrame(env_report["adaptation"]), hide_index=True, width="stretch")
+st.caption("说明：该模块只参考可核验的时区、球场、海拔、开球时段天气和旅行信息；天气优先使用 Open-Meteo 缓存，缺失时回退场馆静态气候。")
 
 section_title("九维度能力评分")
 _radar_cats = _dims.DIMENSIONS + [_dims.DIMENSIONS[0]]  # 闭合多边形
@@ -4075,7 +4098,7 @@ with st.expander("💰 价值 & 凯利（输入体彩/盘口赔率）", expanded
                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(tfig, width="stretch")
     else:
-        st.caption("暂无足够历史快照——多次点上方「🔄 拉取本场可用赔率预填」后形成走势（v1 不自动定时抓取）。")
+        st.caption("暂无足够历史快照——需在赛前多次拉取本场赔率后才能形成走势。")
 
 ev = reason["evidence"]
 with st.expander("📊 证据 · 数据支撑（交锋 + 近况）", expanded=True):

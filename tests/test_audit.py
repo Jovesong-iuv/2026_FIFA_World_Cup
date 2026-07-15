@@ -27,7 +27,8 @@ FIX_FUTURE = {"match_number": 3, "home_team": "Spain", "away_team": "Japan",
               "date_utc": "2026-07-01 19:00:00Z", "home_score": None, "away_score": None}
 FIX_KO = {"match_number": 80, "round_number": 5, "group_name": "", "home_team": "France",
           "away_team": "Argentina", "date_utc": "2026-07-04 19:00:00Z",
-          "home_score": 1, "away_score": 1}
+          "home_score": 1, "away_score": 1, "regulation_home_score": 1,
+          "regulation_away_score": 1, "result_status": "PEN", "result_source": "ESPN"}
 SNAP_KO = {"outcomes": {"home": 0.42, "draw": 0.30, "away": 0.28},
            "locked_at": "2026-07-04T10:00:00Z"}
 
@@ -44,6 +45,49 @@ class ParseOutcomeTest(unittest.TestCase):
         d2 = A._parse_utc("2026-06-20T19:00:00+00:00")
         self.assertEqual(d1, d2)
         self.assertIsNone(A._parse_utc(""))
+
+
+class ScorelineComparisonTest(unittest.TestCase):
+    TOP = [
+        {"score": "1-0", "prob": 0.16},
+        {"score": "2-1", "prob": 0.13},
+        {"score": "1-1", "prob": 0.12},
+    ]
+
+    def test_reports_top_three_hit_rank_and_distance(self):
+        result = A.scoreline_comparison(self.TOP, 2, 1)
+
+        self.assertTrue(result["available"])
+        self.assertFalse(result["top1_hit"])
+        self.assertTrue(result["top3_hit"])
+        self.assertEqual(result["hit_rank"], 2)
+        self.assertEqual(result["min_score_distance"], 0)
+        self.assertEqual(result["actual_score"], "2-1")
+
+    def test_reports_miss_with_nearest_score_errors(self):
+        result = A.scoreline_comparison(self.TOP, 3, 2)
+
+        self.assertFalse(result["top3_hit"])
+        self.assertIsNone(result["hit_rank"])
+        self.assertEqual(result["min_score_distance"], 2)
+        self.assertEqual(result["nearest_score"], "2-1")
+        self.assertEqual(result["home_goal_error"], 1)
+        self.assertEqual(result["away_goal_error"], 1)
+        self.assertEqual(result["total_goal_error"], 2)
+
+    def test_legacy_snapshot_is_not_scoreline_auditable(self):
+        result = A.scoreline_comparison([], 2, 1)
+
+        self.assertFalse(result["available"])
+        self.assertEqual(result["reason"], "无赛前锁定 Top 3 比分")
+
+    def test_partial_or_malformed_top_three_is_not_auditable(self):
+        partial = A.scoreline_comparison(self.TOP[:2], 1, 0)
+        malformed = A.scoreline_comparison(self.TOP[:2] + [{"score": "bad"}], 1, 0)
+
+        self.assertFalse(partial["available"])
+        self.assertFalse(malformed["available"])
+        self.assertIn("三个", partial["reason"])
 
 
 class MatchAuditSnapshotTest(unittest.TestCase):
@@ -67,6 +111,43 @@ class MatchAuditSnapshotTest(unittest.TestCase):
         self.assertEqual(a["model"]["pick"], "home")     # 最看好主胜，实际平局
         self.assertFalse(a["model"]["hit"])
         self.assertIn("模型未中", a["verdict"])
+
+    def test_match_audit_exposes_locked_scoreline_comparison(self):
+        snap = {**SNAP_HOME, "top_scores": [
+            {"score": "1-0", "prob": 0.16},
+            {"score": "2-1", "prob": 0.13},
+            {"score": "1-1", "prob": 0.12},
+        ]}
+
+        a = A.match_audit(None, FIX_HOME, snapshot=snap)
+
+        self.assertTrue(a["scoreline"]["available"])
+        self.assertTrue(a["scoreline"]["top3_hit"])
+        self.assertEqual(a["scoreline"]["hit_rank"], 2)
+
+    def test_knockout_audit_uses_regulation_score_not_aet_total(self):
+        fixture = {
+            **FIX_KO,
+            "home_score": 3,
+            "away_score": 2,
+            "regulation_home_score": 1,
+            "regulation_away_score": 1,
+            "result_status": "AET",
+            "result_source": "ESPN",
+        }
+        snap = {**SNAP_KO, "top_scores": [
+            {"score": "1-1", "prob": 0.16},
+            {"score": "1-0", "prob": 0.13},
+            {"score": "0-1", "prob": 0.12},
+        ]}
+
+        a = A.match_audit(None, fixture, snapshot=snap)
+
+        self.assertEqual(a["actual"], "draw")
+        self.assertEqual(a["match"]["score"], "1-1")
+        self.assertEqual(a["match"]["final_score"], "3-2")
+        self.assertEqual(a["match"]["score_basis"], "90分钟")
+        self.assertTrue(a["scoreline"]["top1_hit"])
 
     def test_match_audit_exposes_postmatch_learning_adjustment(self):
         adjustments = {
@@ -95,6 +176,12 @@ class MatchAuditSnapshotTest(unittest.TestCase):
                     "event_weight": 1.0,
                     "process_weight": 0.9,
                     "time_decay": 1.0,
+                    "scoreline_calibration": {
+                        "weight": 0.7,
+                        "comparison": {"available": True, "top1_hit": False,
+                                       "top3_hit": True, "hit_rank": 2,
+                                       "min_score_distance": 0},
+                    },
                     "weight_notes": ["xG与比分未形成强冲突"],
                     "goal_calibration": {"direction": "under_predicted_goals",
                                          "label": "模型低估总进球"},
@@ -125,6 +212,12 @@ class MatchAuditSnapshotTest(unittest.TestCase):
                     "event_weight": 1.0,
                     "process_weight": 0.9,
                     "time_decay": 1.0,
+                    "scoreline_calibration": {
+                        "weight": 0.7,
+                        "comparison": {"available": True, "top1_hit": False,
+                                       "top3_hit": True, "hit_rank": 2,
+                                       "min_score_distance": 0},
+                    },
                     "weight_notes": ["xG与比分未形成强冲突"],
                     "goal_calibration": {"direction": "under_predicted_goals",
                                          "label": "模型低估总进球"},
@@ -141,6 +234,8 @@ class MatchAuditSnapshotTest(unittest.TestCase):
         self.assertEqual(a["learning"]["teams"]["away"]["delta_defense"], 0.04)
         self.assertEqual(a["learning"]["goal_calibration"]["label"], "模型低估总进球")
         self.assertEqual(a["learning"]["weights"]["process"], 0.9)
+        self.assertEqual(a["learning"]["weights"]["scoreline"], 0.7)
+        self.assertEqual(a["learning"]["scoreline"]["comparison"]["hit_rank"], 2)
         self.assertIn("法国", a["learning"]["summary"])
 
     def test_knockout_audit_includes_professional_postmatch_review(self):
@@ -182,7 +277,9 @@ class MatchAuditSnapshotTest(unittest.TestCase):
         self.assertEqual(fb["weight"], "low")
 
     def test_process_data_can_mark_strength_update_signal(self):
-        fixture = {**FIX_KO, "home_score": 0, "away_score": 2}
+        fixture = {**FIX_KO, "home_score": 0, "away_score": 2,
+                   "regulation_home_score": 0, "regulation_away_score": 2,
+                   "result_status": "FT"}
         insights = {"matches": {
             "France__Argentina": {
                 "prior_matches": [
@@ -248,6 +345,26 @@ class AuditSummaryTest(unittest.TestCase):
         self.assertEqual(s["scope"]["group_stage_finished"], 1)
         self.assertEqual(s["scope"]["knockout_finished"], 1)
         self.assertEqual(s["scope"]["knockout_reviewed"], 1)
+
+    def test_summary_reports_only_locked_top_three_samples(self):
+        home_snap = {**SNAP_HOME, "top_scores": [
+            {"score": "2-1", "prob": 0.16},
+            {"score": "1-0", "prob": 0.13},
+            {"score": "1-1", "prob": 0.12},
+        ]}
+        draw_snap = {**SNAP_DRAW, "top_scores": [
+            {"score": "1-0", "prob": 0.16},
+            {"score": "0-0", "prob": 0.13},
+            {"score": "2-0", "prob": 0.12},
+        ]}
+
+        s = A.audit_summary(None, [FIX_HOME, FIX_DRAW], snapshots={1: home_snap, 2: draw_snap})
+
+        self.assertEqual(s["scoreline_metrics"]["n"], 2)
+        self.assertEqual(s["scoreline_metrics"]["top1_accuracy"], 0.5)
+        self.assertEqual(s["scoreline_metrics"]["top3_accuracy"], 0.5)
+        self.assertEqual(s["scoreline_metrics"]["mean_min_distance"], 0.5)
+        self.assertEqual(s["scoreline_metrics"]["mean_abs_total_goal_error"], 0.5)
 
 
 class CompareTest(unittest.TestCase):

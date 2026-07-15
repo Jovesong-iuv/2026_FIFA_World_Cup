@@ -113,6 +113,34 @@ def _fotmob_stats_row(team: str, data: dict | None) -> dict | None:
     return row
 
 
+def _espn_match_rows(home: str, away: str, fixture: dict | None) -> list[dict]:
+    raw = (fixture or {}).get("match_stats_json")
+    if not raw:
+        return []
+    try:
+        stats = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, ValueError):
+        return []
+    rows = []
+    for team in (home, away):
+        values = (stats or {}).get(team) or {}
+        if not values:
+            continue
+        row = {"team": team, "source": "ESPN单场"}
+        if values.get("possession") is not None:
+            row["possession"] = float(values["possession"])
+        if values.get("shots") is not None:
+            row["shots_for"] = int(values["shots"])
+        notes = []
+        if values.get("shots_on_target") is not None:
+            notes.append(f"射正 {int(values['shots_on_target'])}")
+        if values.get("red_cards"):
+            notes.append(f"红牌 {int(values['red_cards'])}")
+        row["takeaway"] = "；".join(notes) if notes else "ESPN本场技术统计。"
+        rows.append(row)
+    return rows
+
+
 def _fotmob_stats_for_team(team: str) -> dict | None:
     with get_conn() as conn:
         fm_id, fm_name = squads._get_fm_id(conn, team)
@@ -213,7 +241,8 @@ def _current_group_rows(home: str, away: str, model) -> list[dict]:
     return out
 
 
-def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH, model=None) -> dict:
+def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH, model=None,
+                          fixture: dict | None = None) -> dict:
     """联网补全本场分场分析缓存。
 
     数据源优先级：FBref → FotMob → 联网搜索+LLM。
@@ -227,8 +256,13 @@ def refresh_match_insight(home: str, away: str, *, path=INSIGHTS_PATH, model=Non
     errors: list[str] = []
 
     # --- 1) 射门/统计数据：FBref → FotMob → 联网搜索 ---
-    rows = []
+    rows = _espn_match_rows(home, away, fixture)
+    if rows and (fixture or {}).get("result_fetched_at"):
+        entry["stats_fetched_at"] = fixture["result_fetched_at"]
+    known = {row["team"] for row in rows}
     for team in (home, away):
+        if team in known:
+            continue
         got_data = False
         try:
             row = _shooting_row(team, fbref.fetch_team_shooting(team))

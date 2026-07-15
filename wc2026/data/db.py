@@ -40,7 +40,20 @@ CREATE TABLE IF NOT EXISTS fixtures (
     location TEXT,
     predictable INTEGER DEFAULT 0,
     home_score INTEGER,
-    away_score INTEGER
+    away_score INTEGER,
+    regulation_home_score INTEGER,
+    regulation_away_score INTEGER,
+    final_home_score INTEGER,
+    final_away_score INTEGER,
+    penalty_home_score INTEGER,
+    penalty_away_score INTEGER,
+    result_status TEXT,
+    winner_team TEXT,
+    result_source TEXT,
+    source_event_id TEXT,
+    result_fetched_at TEXT,
+    event_flags TEXT,
+    match_stats_json TEXT
 );
 
 -- 预测快照（版本化：支持"随新闻/伤停变化"的对比）
@@ -163,6 +176,18 @@ def _ensure_columns(conn) -> None:
     have_b = {r[1] for r in conn.execute("PRAGMA table_info(bets)")}
     if "close_odds" not in have_b:
         conn.execute("ALTER TABLE bets ADD COLUMN close_odds REAL")
+    have_f = {r[1] for r in conn.execute("PRAGMA table_info(fixtures)")}
+    fixture_columns = (
+        ("regulation_home_score", "INTEGER"), ("regulation_away_score", "INTEGER"),
+        ("final_home_score", "INTEGER"), ("final_away_score", "INTEGER"),
+        ("penalty_home_score", "INTEGER"), ("penalty_away_score", "INTEGER"),
+        ("result_status", "TEXT"), ("winner_team", "TEXT"), ("result_source", "TEXT"),
+        ("source_event_id", "TEXT"), ("result_fetched_at", "TEXT"),
+        ("event_flags", "TEXT"), ("match_stats_json", "TEXT"),
+    )
+    for col, decl in fixture_columns:
+        if col not in have_f:
+            conn.execute(f"ALTER TABLE fixtures ADD COLUMN {col} {decl}")
 
 
 @contextmanager

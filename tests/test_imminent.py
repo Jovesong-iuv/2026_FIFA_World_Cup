@@ -71,6 +71,37 @@ class DetectKeyChangesTest(unittest.TestCase):
 
 
 class SnapshotJsonTest(unittest.TestCase):
+    def test_snapshot_locks_exactly_three_scorelines(self):
+        fixture = {
+            "match_number": 5,
+            "home_team": "France",
+            "away_team": "Senegal",
+            "date_utc": "2026-06-20 19:00:00Z",
+        }
+        report = {
+            "match": {"home_cn": "法国", "away_cn": "塞内加尔"},
+            "generated_at": "2026-06-20T10:00:00Z",
+            "phase": "prematch",
+            "prediction": {
+                "outcomes": {"home": 0.6, "draw": 0.22, "away": 0.18},
+                "expected_goals": {"home": 1.7, "away": 0.9},
+                "top_scores": [
+                    {"score": "1-0", "prob": 0.16},
+                    {"score": "2-0", "prob": 0.14},
+                    {"score": "2-1", "prob": 0.11},
+                    {"score": "1-1", "prob": 0.10},
+                ],
+            },
+            "data_quality": {"score": 0.8},
+            "lineup": None,
+            "confidence": "中",
+            "risks": [],
+        }
+
+        snap = IM._snap_from_report(fixture, report, "2026-06-20T10:00:00Z")
+
+        self.assertEqual([r["score"] for r in snap["top_scores"]], ["1-0", "2-0", "2-1"])
+
     def test_merge_load_roundtrip_and_strip_report(self):
         with TemporaryDirectory() as d:
             p = Path(d) / "snap.json"

@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from wc2026.analysis import evidence, tournament_facts
 from wc2026.config import settings
-from wc2026.data.db import get_conn
+from wc2026.data.db import get_conn, init_db
 from wc2026.data.ingest import ingest_international_results
 from wc2026.data.results import apply_results_overlay
 from wc2026.data.sources import news
@@ -162,8 +162,12 @@ def intelligence_ep(home: str, away: str, neutral: bool = True,
 
 def _load_fixtures(match_number: int | None = None):
     """加载（单场 fixture, 全部 predictable fixtures）。两者含比分字段，供审计/锁定复用。"""
+    init_db()
     cols = ("match_number, round_number, date_utc, home_team, away_team, "
-            "group_name, location, predictable, home_score, away_score")
+            "group_name, location, predictable, home_score, away_score, "
+            "regulation_home_score, regulation_away_score, final_home_score, final_away_score, "
+            "penalty_home_score, penalty_away_score, result_status, winner_team, result_source, "
+            "source_event_id, result_fetched_at, event_flags, match_stats_json")
     with get_conn() as conn:
         fixture = None
         if match_number is not None:
