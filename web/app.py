@@ -3898,6 +3898,41 @@ if _sig.get("signals"):
 elif _sig.get("enabled"):
     st.caption("赔率走势：暂无明显矛盾/过热信号（已剔水仅作走势参考）。")
 
+section_title("可视化大屏 Beta")
+from wc2026.analysis import dashboard_bridge as _bridge
+from wc2026.analysis import match_insights as _match_insights
+_bridge_payload = _bridge.build_dashboard_payload(
+    model, home, away, neutral,
+    fixture=selected_fixture,
+    fixtures=fixtures,
+    odds_1x2={"home": odds["home"], "draw": odds["draw"], "away": odds["away"]},
+    group_state=_cl_group_state,
+    pred=cl,
+)
+_ma = _bridge_payload.get("match_analysis") or {}
+if not _ma.get("available"):
+    st.warning(_ma.get("text", "分场分析暂无补充数据。"))
+if action_button("🌐 联网补全分场分析数据", key=f"refresh_match_insight:{home}:{away}",
+                 help="尝试拉取 ESPN 单场统计、FBref 射门/xG、FotMob 阵容/阵型/伤停和新闻，并写入本地缓存"):
+    with st.spinner("联网补全分场分析数据…"):
+        _mi_res = _match_insights.refresh_match_insight(
+            home, away, model=model, fixture=selected_fixture)
+        _bridge_payload["match_analysis"] = _match_insights.build_match_analysis(
+            home, away, {"prediction": _bridge_payload.get("prediction", {})}
+        )
+    if _mi_res["ok"]:
+        st.success("分场分析数据已补全。")
+    else:
+        st.warning("已写入可获取的数据；部分来源失败：" + "；".join(_mi_res["errors"][:4]))
+    st.cache_data.clear()
+    st.cache_resource.clear()
+_bridge_payload["group_strategic_analysis"] = _gsa_data
+if cl.get("strategic", {}).get("applied"):
+    _bridge_payload["prediction"]["strategic"] = cl["strategic"]
+with st.expander("打开参考项目风格大屏（HTML / Canvas 桥接版）", expanded=True):
+    st.caption("数据来自当前 Python 模型与结构化赛果；人口、最佳成绩等静态资料来自 data/team_profiles.json。")
+    render_bridge_dashboard(_bridge_payload)
+
 section_title("各市场概率")
 half_full = derive.half_full_time(lam, mu)
 m1, m2, m3 = st.columns(3)

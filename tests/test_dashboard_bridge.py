@@ -1,10 +1,22 @@
 import unittest
+import ast
+from pathlib import Path
 from unittest.mock import patch
 
 from wc2026.analysis import dashboard_bridge
 
 
 class DashboardBridgePayloadTest(unittest.TestCase):
+    def test_streamlit_single_match_page_mounts_visual_dashboard(self):
+        app_path = Path(__file__).resolve().parents[1] / "web" / "app.py"
+        tree = ast.parse(app_path.read_text(encoding="utf-8"))
+        calls = [node for node in ast.walk(tree)
+                 if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Name)
+                 and node.func.id == "render_bridge_dashboard"]
+
+        self.assertEqual(len(calls), 1)
+
     def test_prediction_payload_exposes_style_and_win_margins(self):
         pred = {
             "matrix": __import__("numpy").array([[0.4, 0.1], [0.2, 0.3]]),
