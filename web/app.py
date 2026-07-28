@@ -29,8 +29,13 @@ from wc2026.markets import derive, value
 from wc2026.models.predictor import DC_PATH, ELO_PATH, get_model, train_and_save
 from wc2026.access import owner_key_matches
 
-st.set_page_config(page_title="2026 世界杯预测", page_icon="⚽", layout="wide")
+st.set_page_config(page_title="足球赛事预测", page_icon="⚽", layout="wide")
 HOSTS = {"Mexico", "Canada", "United States"}
+COMPETITION_OPTIONS = ["巴甲", "欧冠", "世界杯"]
+WORLD_CUP_PAGE_OPTIONS = [
+    "首页", "淘汰赛", "单场分析", "推荐对比", "晋级之路", "小组赛赛程",
+    "小组出线", "球队查询", "大胆预测", "赛后复盘", "AI 分析师",
+]
 
 # 登录开关：暂时关闭用户登录（登录/用户管理代码全部保留，置 True 即恢复登录墙）。
 LOGIN_ENABLED = False
@@ -596,17 +601,26 @@ def _sorted_groups(groups) -> list[str]:
     return sorted(groups, key=_group_sort_key)
 
 
-def render_top_nav(page_options: list[str]) -> str:
-    brand_col, nav_col = st.columns([1.25, 5])
+def render_top_nav(page_options: list[str]) -> tuple[str, str | None]:
+    brand_col, competition_col, nav_col = st.columns([1.3, 2, 5.3])
     with brand_col:
         st.markdown(
-            '<div class="wc-brand"><span class="wc-brand-mark">26</span><span>世界杯预测</span></div>',
+            '<div class="wc-brand"><span class="wc-brand-mark">AI</span><span>足球赛事预测</span></div>',
             unsafe_allow_html=True,
         )
-    with nav_col:
-        page = st.radio("页面", page_options, horizontal=True, label_visibility="collapsed",
-                        key="top_page_nav")
-    return page
+    with competition_col:
+        competition = st.radio(
+            "赛事", COMPETITION_OPTIONS, horizontal=True, label_visibility="collapsed",
+            key="top_competition_nav",
+        )
+    page = None
+    if competition == "世界杯":
+        with nav_col:
+            page = st.radio(
+                "页面", page_options, horizontal=True, label_visibility="collapsed",
+                key="top_page_nav",
+            )
+    return competition, page
 
 
 def _build_group_strategic_analysis(model, home: str, away: str,
@@ -1763,6 +1777,152 @@ def load_fixtures():
         [dict(r) for r in rows], load_live_fixture_state()["fixtures"])
     fixtures = [f for f in fixtures if f.get("predictable") == 1]
     return apply_results_overlay(fixtures)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_club_competition(competition: str) -> dict:
+    from wc2026.data.sources.club_competitions import fetch_competition_events
+
+    return fetch_competition_events(competition, timeout=8)
+
+
+def _club_event_time(value: str | None) -> tuple[str, str]:
+    if not value:
+        return "日期待定", "时间待定"
+    parsed = pd.to_datetime(value, utc=True, errors="coerce")
+    if pd.isna(parsed):
+        return "日期待定", "时间待定"
+    local = parsed.tz_convert("Asia/Shanghai")
+    return f"{local.month:02d}月{local.day:02d}日", local.strftime("%H:%M")
+
+
+def _club_stage_label(stage: str) -> str:
+    labels = {
+        "Regular Season": "联赛",
+        "First Round": "资格赛第一轮",
+        "Second Round": "资格赛第二轮",
+        "Third Round": "资格赛第三轮",
+        "Playoffs": "附加赛",
+        "League Phase": "联赛阶段",
+        "Round Of 16": "1/8 决赛",
+        "Quarterfinals": "1/4 决赛",
+        "Semifinals": "半决赛",
+        "Final": "决赛",
+    }
+    if stage.endswith("Brasileiro Serie A"):
+        return "巴甲联赛"
+    return labels.get(stage, stage or "赛事")
+
+
+def render_club_competition(competition: str) -> None:
+    from wc2026.data.club_names import club_zh
+
+    config = {
+        "巴甲": {
+            "key": "brasileirao",
+            "title": "巴西足球甲级联赛",
+            "subtitle": "2026 Brasileirão Série A · 近期赛程与实时赛果",
+            "kicker": "BRASILEIRÃO",
+        },
+        "欧冠": {
+            "key": "champions_league",
+            "title": "欧洲冠军联赛",
+            "subtitle": "UEFA Champions League · 主赛与资格赛统一赛程",
+            "kicker": "ROAD TO THE FINAL",
+        },
+    }[competition]
+    render_hero(config["title"], config["subtitle"], config["kicker"])
+
+    try:
+        data = load_club_competition(config["key"])
+    except Exception as exc:
+        st.error(f"赛事数据暂时无法加载：{exc}")
+        if st.button("重新加载", key=f"reload:{config['key']}"):
+            load_club_competition.clear()
+            st.rerun()
+        return
+
+    events = data["events"]
+    completed = sum(row["completed"] for row in events)
+    live = sum(row["state"] == "in" for row in events)
+    upcoming = sum(row["state"] == "pre" for row in events)
+    other = sum(row["state"] == "other" for row in events)
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("窗口内比赛", len(events))
+    m2.metric("未开赛", upcoming)
+    m3.metric("进行中", live)
+    m4.metric("已结束", completed)
+    m5.metric("延期 / 取消", other)
+
+    seasons = " / ".join(data["seasons"]) or "当前赛季"
+    st.caption(f"{seasons} · 北京时间 · ESPN 公开赛程 · 查询窗口 {data['date_range']}")
+    if data["errors"]:
+        st.warning("部分赛事源暂不可用，当前展示其余可用赛程。")
+    if not events:
+        st.info("当前日期窗口内暂无比赛。")
+        return
+
+    filter_col, search_col = st.columns([1.2, 2])
+    state_label = filter_col.selectbox(
+        "赛况", ["全部", "未开赛", "进行中", "已结束", "延期 / 取消"],
+        key=f"club_state:{config['key']}",
+    )
+    query = search_col.text_input(
+        "搜索球队", placeholder="输入球队中文名或英文名",
+        key=f"club_search:{config['key']}",
+    ).strip().lower()
+    state_map = {
+        "未开赛": "pre", "进行中": "in", "已结束": "post", "延期 / 取消": "other",
+    }
+
+    def keep(row: dict) -> bool:
+        if state_label != "全部" and row["state"] != state_map[state_label]:
+            return False
+        names = (
+            row["home"]["name"], row["away"]["name"],
+            club_zh(row["home"]["name"]), club_zh(row["away"]["name"]),
+        )
+        return not query or any(query in name.lower() for name in names)
+
+    shown = [row for row in events if keep(row)]
+    shown.sort(
+        key=lambda row: (
+            {"in": 0, "pre": 1, "post": 2}.get(row["state"], 3),
+            row["date_utc"] or "",
+        )
+    )
+    st.caption(f"显示 {len(shown)} 场")
+    for row in shown:
+        date_label, time_label = _club_event_time(row["date_utc"])
+        status = row["status"] or {
+            "pre": "未开赛", "in": "进行中", "post": "已结束", "other": "延期 / 取消",
+        }.get(row["state"], "状态待定")
+        with st.container(border=True):
+            meta, matchup, score = st.columns([1.2, 4, 1])
+            with meta:
+                st.caption(_club_stage_label(row["stage"]))
+                st.caption(f"{date_label} · {time_label} · {status}")
+            with matchup:
+                home_logo, home_name = st.columns([0.35, 4])
+                if row["home"]["logo"]:
+                    home_logo.image(row["home"]["logo"], width=28)
+                home_name.markdown(f"**{club_zh(row['home']['name'])}**")
+                away_logo, away_name = st.columns([0.35, 4])
+                if row["away"]["logo"]:
+                    away_logo.image(row["away"]["logo"], width=28)
+                away_name.markdown(f"**{club_zh(row['away']['name'])}**")
+                place = " · ".join(part for part in (row["venue"], row["city"]) if part)
+                if place:
+                    st.caption(place)
+            with score:
+                if row["state"] in {"in", "post"}:
+                    st.markdown(
+                        f"<div style='font-size:28px;font-weight:900;text-align:center;'>"
+                        f"{row['home']['score'] or '—'}<br>{row['away']['score'] or '—'}</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.caption("VS")
 
 
 def _get_wc_teams(model, fixtures):
@@ -3417,8 +3577,6 @@ def render_recommendation_compare(model, fixtures: list[dict]) -> None:
 inject_design_system()
 user = require_login()
 require_view_access()  # 访问口令墙：设了 ACCESS_PASSWORD 才生效；管理员 ?owner= 免口令
-model = load_model()
-fixtures = load_fixtures()
 
 # 每个会话记录一次访问 IP（建表 + upsert，同 IP 保留备注）
 if not st.session_state.get("_visit_logged"):
@@ -3432,12 +3590,7 @@ if not st.session_state.get("_visit_logged"):
         pass
     st.session_state["_visit_logged"] = True
 
-render_hero(
-    "2026 世界杯预测工作台",
-    "比分概率、盘口价值、晋级之路与证据分析集中在一个可操作界面中。模型结论仅供参考，请理性参与并遵守当地法规。",
-)
-
-page_options = ["首页", "淘汰赛", "单场分析", "推荐对比", "晋级之路", "小组赛赛程", "小组出线", "球队查询", "大胆预测", "赛后复盘", "AI 分析师"]
+page_options = list(WORLD_CUP_PAGE_OPTIONS)
 if is_owner():
     page_options.append("访问记录")
 if user["role"] == "admin":
@@ -3445,9 +3598,19 @@ if user["role"] == "admin":
 _pending_nav = st.session_state.pop("_pending_nav_page", None)
 if _pending_nav in page_options:
     st.session_state["top_page_nav"] = _pending_nav
-page = render_top_nav(page_options)
+competition, page = render_top_nav(page_options)
 render_admin_user_panel()
 render_access_banner()
+if competition != "世界杯":
+    render_club_competition(competition)
+    st.stop()
+
+model = load_model()
+fixtures = load_fixtures()
+render_hero(
+    "2026 世界杯预测工作台",
+    "比分概率、盘口价值、晋级之路与证据分析集中在一个可操作界面中。模型结论仅供参考，请理性参与并遵守当地法规。",
+)
 if page == "首页":
     render_home(model)
     st.stop()
